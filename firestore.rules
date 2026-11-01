@@ -1,0 +1,30 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /students/{studentId} {
+      allow read, write: if true;
+    }
+
+    match /monthly_records/{recordId} {
+      allow read, write: if true;
+    }
+
+    match /payment_transactions/{transactionId} {
+      allow read, write: if true;
+    }
+
+    match /system_settings/{settingId} {
+      allow read, write: if true;
+    }
+
+    match /test/{testId} {
+      allow read, write: if true;
+    }
+
+    // Default deny for all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

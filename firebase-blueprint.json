@@ -1,0 +1,93 @@
+{
+  "entities": {
+    "Student": {
+      "title": "Student",
+      "description": "Student master profile including personal and academic contact information",
+      "type": "object",
+      "properties": {
+        "studentCode": { "type": "string", "maxLength": 30 },
+        "name": { "type": "string", "maxLength": 100 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "parentPhone": { "type": "string", "maxLength": 30 },
+        "grade": { "type": "string", "maxLength": 60 },
+        "groupName": { "type": "string", "maxLength": 80 },
+        "monthlyFee": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "joinedDate": { "type": "string", "maxLength": 30 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["studentCode", "name", "phone", "parentPhone", "grade", "monthlyFee", "status"]
+    },
+    "MonthlyRecord": {
+      "title": "MonthlyRecord",
+      "description": "Monthly fee record tracking paid and remaining amounts for a student in a specific month",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 100 },
+        "monthKey": { "type": "string", "maxLength": 20 },
+        "monthLabel": { "type": "string", "maxLength": 50 },
+        "requiredAmount": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "remainingAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["paid", "partial", "unpaid"] },
+        "lastPaymentDate": { "type": "string", "maxLength": 50 },
+        "receiptNumber": { "type": "string", "maxLength": 40 },
+        "notes": { "type": "string", "maxLength": 300 },
+        "updatedBy": { "type": "string", "maxLength": 80 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["studentId", "monthKey", "requiredAmount", "paidAmount", "remainingAmount", "status"]
+    },
+    "PaymentTransaction": {
+      "title": "PaymentTransaction",
+      "description": "Individual payment transaction log with receipts",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 100 },
+        "monthKey": { "type": "string", "maxLength": 20 },
+        "amount": { "type": "number" },
+        "receiptNumber": { "type": "string", "maxLength": 40 },
+        "recordedBy": { "type": "string", "maxLength": 80 },
+        "note": { "type": "string", "maxLength": 300 },
+        "paymentDate": { "type": "string", "maxLength": 50 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["studentId", "monthKey", "amount", "paymentDate", "receiptNumber"]
+    },
+    "SystemSetting": {
+      "title": "SystemSetting",
+      "description": "Global teacher settings and default fee configurations",
+      "type": "object",
+      "properties": {
+        "teacherName": { "type": "string", "maxLength": 100 },
+        "defaultMonthlyFee": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 20 },
+        "academicYear": { "type": "string", "maxLength": 30 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["teacherName", "defaultMonthlyFee"]
+    }
+  },
+  "firestore": {
+    "/students/{studentId}": {
+      "schema": "Student",
+      "description": "Student master profiles"
+    },
+    "/monthly_records/{recordId}": {
+      "schema": "MonthlyRecord",
+      "description": "Monthly fee payment status per student"
+    },
+    "/payment_transactions/{transactionId}": {
+      "schema": "PaymentTransaction",
+      "description": "Receipt logs and payment audit trails"
+    },
+    "/system_settings/{settingId}": {
+      "schema": "SystemSetting",
+      "description": "Application configurations and defaults"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "منظومة مستر أحمد الشعراوي - إدارة الطلاب والمصروفات",
+  "description": "برنامج احترافي لإدارة أكثر من 1000 طالب وحساب المصروفات الشهرية والمتبقي والمزامنة الحية الفورية بين جميع الهواتف.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -10,13 +10,11 @@ import {
   setDoc, 
   deleteDoc, 
   onSnapshot, 
-  query, 
-  orderBy, 
-  limit,
-  serverTimestamp 
+  getDocs,
+  writeBatch
 } from 'firebase/firestore';
 import { db, testConnection, handleFirestoreError, OperationType } from './firebase';
-import { Student, MonthlyRecord, PaymentTransaction, SystemSettings } from './types';
+import { Student, MonthlyRecord, PaymentTransaction } from './types';
 import { 
   getAcademicMonths, 
   getCurrentMonthKey, 
@@ -34,12 +32,19 @@ import { ReceiptModal } from './components/ReceiptModal';
 import { TreasuryHistory } from './components/TreasuryHistory';
 import { SettingsView } from './components/SettingsView';
 import { FeasibilityStudyModal } from './components/FeasibilityStudyModal';
-import { AlertCircle, Wifi, RefreshCw } from 'lucide-react';
+import { LoginScreen } from './components/LoginScreen';
+import { ResetSystemModal } from './components/ResetSystemModal';
 
 export default function App() {
   const teacherName = 'مستر أحمد الشعراوي';
   const academicMonths = useMemo(() => getAcademicMonths(), []);
   
+  // Authentication State
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return sessionStorage.getItem('shaarawy_session_auth') === 'true';
+  });
+  const [systemPassword, setSystemPassword] = useState<string>('123456');
+
   // State
   const [currentMonthKey, setCurrentMonthKey] = useState<string>(getCurrentMonthKey());
   const [activeTab, setActiveTab] = useState<'students' | 'treasury' | 'settings'>('students');
@@ -68,6 +73,7 @@ export default function App() {
   const [receiptData, setReceiptData] = useState<any | null>(null);
 
   const [isStudyModalOpen, setIsStudyModalOpen] = useState(false);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [syncAlert, setSyncAlert] = useState<string | null>(null);
 
   // Handle device name update
@@ -83,7 +89,29 @@ export default function App() {
     });
   }, []);
 
-  // 2. Real-time Listeners for Students (Instant sync across phones)
+  // 2. Real-time Listener for System Password
+  useEffect(() => {
+    const authDocRef = doc(db, 'system_settings', 'auth');
+    const unsubAuth = onSnapshot(authDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data && data.password) {
+          setSystemPassword(data.password);
+        }
+      } else {
+        // Initialize with default 123456
+        setDoc(authDocRef, {
+          password: '123456',
+          teacherName,
+          updatedAt: new Date().toISOString(),
+        }).catch(() => {});
+      }
+    });
+
+    return () => unsubAuth();
+  }, []);
+
+  // 3. Real-time Listeners for Students (Instant sync across phones)
   useEffect(() => {
     const studentsCol = collection(db, 'students');
     const unsubStudents = onSnapshot(
@@ -111,7 +139,7 @@ export default function App() {
     return () => unsubStudents();
   }, []);
 
-  // 3. Real-time Listeners for Monthly Records
+  // 4. Real-time Listeners for Monthly Records
   useEffect(() => {
     const recordsCol = collection(db, 'monthly_records');
     const unsubRecords = onSnapshot(
@@ -132,7 +160,7 @@ export default function App() {
     return () => unsubRecords();
   }, []);
 
-  // 4. Real-time Listeners for Payment Transactions
+  // 5. Real-time Listeners for Payment Transactions
   useEffect(() => {
     const transCol = collection(db, 'payment_transactions');
     const unsubTransactions = onSnapshot(
@@ -153,6 +181,37 @@ export default function App() {
 
     return () => unsubTransactions();
   }, []);
+
+  // Login handler
+  const handleLogin = (enteredPass: string): boolean => {
+    if (enteredPass === systemPassword) {
+      setIsAuthenticated(true);
+      sessionStorage.setItem('shaarawy_session_auth', 'true');
+      return true;
+    }
+    return false;
+  };
+
+  // Logout handler
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    sessionStorage.removeItem('shaarawy_session_auth');
+  };
+
+  // Update password in Firestore
+  const handleUpdatePassword = async (currentPass: string, newPass: string): Promise<boolean> => {
+    if (currentPass !== systemPassword) {
+      return false;
+    }
+    const authDocRef = doc(db, 'system_settings', 'auth');
+    await setDoc(authDocRef, {
+      password: newPass,
+      teacherName,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+    setSystemPassword(newPass);
+    return true;
+  };
 
   // Calculate Next Suggested Student Code
   const suggestedStudentCode = useMemo(() => {
@@ -233,7 +292,7 @@ export default function App() {
     }
   };
 
-  // Delete Student
+  // Delete Individual Student
   const handleDeleteStudent = async (studentId: string, studentName: string) => {
     if (!window.confirm(`هل أنت متأكد من حذف الطالب (${studentName}) نهائياً من المنظومة؟`)) {
       return;
@@ -242,6 +301,42 @@ export default function App() {
       await deleteDoc(doc(db, 'students', studentId));
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `students/${studentId}`);
+    }
+  };
+
+  // Reset System / End of Accounts (Full Deletion with Password Verification)
+  const handleConfirmReset = async (password: string): Promise<boolean> => {
+    if (password !== systemPassword) {
+      return false;
+    }
+
+    try {
+      // 1. Delete all students
+      const studentsSnap = await getDocs(collection(db, 'students'));
+      const studentPromises = studentsSnap.docs.map((d) => deleteDoc(d.ref));
+      await Promise.all(studentPromises);
+
+      // 2. Delete all monthly records
+      const recordsSnap = await getDocs(collection(db, 'monthly_records'));
+      const recordPromises = recordsSnap.docs.map((d) => deleteDoc(d.ref));
+      await Promise.all(recordPromises);
+
+      // 3. Delete all payment transactions
+      const transSnap = await getDocs(collection(db, 'payment_transactions'));
+      const transPromises = transSnap.docs.map((d) => deleteDoc(d.ref));
+      await Promise.all(transPromises);
+
+      // Reset local state
+      setStudents([]);
+      setMonthlyRecords({});
+      setTransactions([]);
+
+      setSyncAlert('🎉 تم بنجاح تقفيل جميع الحسابات وتصفير المنظومة والبدء من جديد لسنة دراسية جديدة!');
+      setTimeout(() => setSyncAlert(null), 6000);
+      return true;
+    } catch (err) {
+      console.error('Reset error:', err);
+      throw err;
     }
   };
 
@@ -342,8 +437,6 @@ export default function App() {
   // Seed sample data for testing
   const handleSeedSampleData = async (count: number) => {
     const now = new Date().toISOString();
-    const batchList = [];
-
     for (let i = 0; i < count; i++) {
       const sample = SAMPLE_STUDENTS[i % SAMPLE_STUDENTS.length];
       const codeNum = 1001 + students.length + i;
@@ -365,7 +458,6 @@ export default function App() {
         updatedAt: now,
       };
 
-      batchList.push(newStudent);
       const docRef = doc(db, 'students', studentId);
       await setDoc(docRef, newStudent);
     }
@@ -436,6 +528,16 @@ export default function App() {
     setIsReceiptModalOpen(true);
   };
 
+  // If user is not authenticated, show Login Screen
+  if (!isAuthenticated) {
+    return (
+      <LoginScreen
+        onLogin={handleLogin}
+        teacherName={teacherName}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-emerald-500 selection:text-white">
       {/* Navbar with Real-time indicator & Controls */}
@@ -448,6 +550,8 @@ export default function App() {
         setCurrentMonthKey={setCurrentMonthKey}
         currentDeviceName={currentDeviceName}
         onOpenStudyModal={() => setIsStudyModalOpen(true)}
+        onOpenResetModal={() => setIsResetModalOpen(true)}
+        onLogout={handleLogout}
         isConnected={isConnected}
       />
 
@@ -456,7 +560,7 @@ export default function App() {
         
         {/* Real-time Alert Banner */}
         {syncAlert && (
-          <div className="bg-emerald-600 text-white text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md flex items-center justify-between animate-in slide-in-from-top-2">
+          <div className="bg-emerald-600 text-white text-xs sm:text-sm px-4 py-3 rounded-2xl shadow-lg flex items-center justify-between animate-in slide-in-from-top-2">
             <span className="font-bold">{syncAlert}</span>
             <button onClick={() => setSyncAlert(null)} className="text-white/80 hover:text-white">
               ✕
@@ -510,6 +614,8 @@ export default function App() {
             onSeedSampleData={handleSeedSampleData}
             onBulkImportStudents={handleBulkImportStudents}
             teacherName={teacherName}
+            onUpdatePassword={handleUpdatePassword}
+            onOpenResetModal={() => setIsResetModalOpen(true)}
           />
         )}
 
@@ -521,12 +627,20 @@ export default function App() {
           <p className="font-semibold text-slate-700">
             منظومة {teacherName} لإدارة الطلاب والمصروفات الشهرية • سعة 1000+ طالب ومزامنة سحابية فورية
           </p>
-          <button
-            onClick={() => setIsStudyModalOpen(true)}
-            className="text-emerald-700 hover:text-emerald-800 font-bold underline"
-          >
-            عرض دراسة الاعتمادية الفنية والجدوى 100%
-          </button>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setIsResetModalOpen(true)}
+              className="text-red-600 hover:text-red-700 font-bold"
+            >
+              تقفيل الحسابات وتصفير الطلاب
+            </button>
+            <button
+              onClick={() => setIsStudyModalOpen(true)}
+              className="text-emerald-700 hover:text-emerald-800 font-bold underline"
+            >
+              عرض دراسة الاعتمادية الفنية 100%
+            </button>
+          </div>
         </div>
       </footer>
 
@@ -556,6 +670,14 @@ export default function App() {
         onClose={() => setIsReceiptModalOpen(false)}
         receiptData={receiptData}
         teacherName={teacherName}
+      />
+
+      <ResetSystemModal
+        isOpen={isResetModalOpen}
+        onClose={() => setIsResetModalOpen(false)}
+        onConfirmReset={handleConfirmReset}
+        onExportBackup={handleExportExcel}
+        studentsCount={students.length}
       />
 
       <FeasibilityStudyModal

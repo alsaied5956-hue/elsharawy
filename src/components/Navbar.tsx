@@ -8,7 +8,9 @@ import {
   Settings, 
   ShieldCheck, 
   Smartphone,
-  ChevronDown
+  ChevronDown,
+  LogOut,
+  ShieldAlert
 } from 'lucide-react';
 import { MonthOption } from '../types';
 
@@ -21,6 +23,8 @@ interface Props {
   setCurrentMonthKey: (key: string) => void;
   currentDeviceName: string;
   onOpenStudyModal: () => void;
+  onOpenResetModal: () => void;
+  onLogout: () => void;
   isConnected: boolean;
 }
 
@@ -33,6 +37,8 @@ export const Navbar: React.FC<Props> = ({
   setCurrentMonthKey,
   currentDeviceName,
   onOpenStudyModal,
+  onOpenResetModal,
+  onLogout,
   isConnected,
 }) => {
   return (
@@ -146,6 +152,16 @@ export const Navbar: React.FC<Props> = ({
             </button>
           </div>
 
+          {/* Reset Accounts Button (Red) */}
+          <button
+            onClick={onOpenResetModal}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-xl text-xs font-bold transition shadow-xs"
+            title="تقفيل الحسابات وتصفير الطلاب لسنة جديدة"
+          >
+            <ShieldAlert className="w-3.5 h-3.5 text-red-600" />
+            <span className="hidden sm:inline">تقفيل الحسابات</span>
+          </button>
+
           {/* Desktop Study Button */}
           <button
             onClick={onOpenStudyModal}
@@ -153,6 +169,15 @@ export const Navbar: React.FC<Props> = ({
           >
             <ShieldCheck className="w-4 h-4 text-emerald-200" />
             <span>دراسة الاعتمادية 100%</span>
+          </button>
+
+          {/* Logout / Lock Button */}
+          <button
+            onClick={onLogout}
+            className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-slate-100 rounded-xl transition"
+            title="تسجيل الخروج وقفل الشاشة"
+          >
+            <LogOut className="w-4 h-4" />
           </button>
 
         </div>

@@ -354,7 +354,7 @@ export const StudentTable: React.FC<Props> = ({
                           }`}
                         >
                           <CreditCard className="w-3.5 h-3.5" />
-                          {isPaidFull ? 'تعديل/إيصال' : isPartial ? 'سداد المتبقي' : 'سداد المصاريف'}
+                          {isPaidFull ? 'سداد / استرجاع ↩️' : isPartial ? 'سداد المتبقي' : 'سداد المصاريف'}
                         </button>
 
                         <button

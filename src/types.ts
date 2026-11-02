@@ -47,6 +47,14 @@ export interface PaymentTransaction {
   note?: string;
   paymentDate: string;
   createdAt: string;
+  type?: 'payment' | 'refund';
+  isRefunded?: boolean;
+  refundedAmount?: number;
+  refundReason?: string;
+  refundDate?: string;
+  refundedBy?: string;
+  originalTransactionId?: string;
+  originalReceiptNumber?: string;
 }
 
 export interface SystemSettings {

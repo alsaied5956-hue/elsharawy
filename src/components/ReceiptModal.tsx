@@ -1,7 +1,6 @@
 import React from 'react';
-import { X, Printer, Share2, CheckCircle2, MessageCircle, Phone } from 'lucide-react';
-import { Student } from '../types';
-import { formatCurrency, formatDateTime, createWhatsAppLink } from '../utils/helpers';
+import { X, Printer, Share2, CheckCircle2, MessageCircle, RotateCcw } from 'lucide-react';
+import { formatCurrency, formatDateTime, createWhatsAppLink, createRefundWhatsAppLink } from '../utils/helpers';
 
 interface Props {
   isOpen: boolean;
@@ -11,7 +10,7 @@ interface Props {
     studentName: string;
     studentCode: string;
     monthLabel: string;
-    amountPaidNow: number;
+    amountPaidNow: number; // or refunded amount
     totalPaid: number;
     requiredFee: number;
     remaining: number;
@@ -19,6 +18,8 @@ interface Props {
     date: string;
     parentPhone: string;
     studentPhone?: string;
+    isRefund?: boolean;
+    refundReason?: string;
   } | null;
   teacherName?: string;
 }
@@ -35,26 +36,50 @@ export const ReceiptModal: React.FC<Props> = ({
     window.print();
   };
 
-  const parentWhatsAppUrl = createWhatsAppLink(
-    receiptData.parentPhone,
-    receiptData.studentName,
-    receiptData.monthLabel,
-    receiptData.amountPaidNow,
-    receiptData.remaining,
-    receiptData.receiptNumber,
-    teacherName
-  );
+  const isRefund = !!receiptData.isRefund;
 
-  const studentWhatsAppUrl = receiptData.studentPhone
-    ? createWhatsAppLink(
-        receiptData.studentPhone,
+  const parentWhatsAppUrl = isRefund
+    ? createRefundWhatsAppLink(
+        receiptData.parentPhone,
+        receiptData.studentName,
+        receiptData.monthLabel,
+        receiptData.amountPaidNow,
+        receiptData.receiptNumber,
+        receiptData.remaining,
+        receiptData.refundReason || 'بناءً على طلب ولي الأمر',
+        teacherName
+      )
+    : createWhatsAppLink(
+        receiptData.parentPhone,
         receiptData.studentName,
         receiptData.monthLabel,
         receiptData.amountPaidNow,
         receiptData.remaining,
         receiptData.receiptNumber,
         teacherName
-      )
+      );
+
+  const studentWhatsAppUrl = receiptData.studentPhone
+    ? isRefund
+      ? createRefundWhatsAppLink(
+          receiptData.studentPhone,
+          receiptData.studentName,
+          receiptData.monthLabel,
+          receiptData.amountPaidNow,
+          receiptData.receiptNumber,
+          receiptData.remaining,
+          receiptData.refundReason || 'بناءً على طلب ولي الأمر',
+          teacherName
+        )
+      : createWhatsAppLink(
+          receiptData.studentPhone,
+          receiptData.studentName,
+          receiptData.monthLabel,
+          receiptData.amountPaidNow,
+          receiptData.remaining,
+          receiptData.receiptNumber,
+          teacherName
+        )
     : null;
 
   return (
@@ -62,10 +87,21 @@ export const ReceiptModal: React.FC<Props> = ({
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
         
         {/* Modal Top Bar */}
-        <div className="bg-slate-100 px-4 py-3 border-b border-slate-200 flex items-center justify-between no-print">
+        <div className={`px-4 py-3 border-b flex items-center justify-between no-print ${
+          isRefund ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'
+        }`}>
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-            <span className="font-bold text-slate-800 text-sm">تم السداد والتحديث بنجاح</span>
+            {isRefund ? (
+              <>
+                <RotateCcw className="w-5 h-5 text-rose-600" />
+                <span className="font-bold text-rose-900 text-sm">تم استرجاع المبلغ وتحديث الخزينة</span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                <span className="font-bold text-slate-800 text-sm">تم السداد والتحديث بنجاح</span>
+              </>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -79,8 +115,12 @@ export const ReceiptModal: React.FC<Props> = ({
         <div className="p-6 text-slate-800 text-sm space-y-5 print:p-8" id="receipt-print-area">
           {/* Header */}
           <div className="text-center border-b-2 border-dashed border-slate-200 pb-4">
-            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 mb-2 inline-block">
-              إيصال سداد رسمي معتمد
+            <span className={`text-xs font-bold px-2.5 py-1 rounded-full border mb-2 inline-block ${
+              isRefund 
+                ? 'text-rose-800 bg-rose-50 border-rose-300' 
+                : 'text-emerald-700 bg-emerald-50 border-emerald-200'
+            }`}>
+              {isRefund ? 'إيصال استرجاع مبلغ رسمي معتمد' : 'إيصال سداد رسمي معتمد'}
             </span>
             <h2 className="text-xl font-black text-slate-900 tracking-tight">
               منظومة {teacherName}
@@ -94,7 +134,7 @@ export const ReceiptModal: React.FC<Props> = ({
           </div>
 
           {/* Details Table */}
-          <div className="space-y-2.5 text-xs">
+          <div className="space-y-2 text-xs">
             <div className="flex justify-between py-1 border-b border-slate-100">
               <span className="text-slate-500">اسم الطالب:</span>
               <span className="font-bold text-slate-900 text-sm">{receiptData.studentName}</span>
@@ -108,36 +148,59 @@ export const ReceiptModal: React.FC<Props> = ({
               <span className="font-semibold text-slate-800">{receiptData.monthLabel}</span>
             </div>
             <div className="flex justify-between py-1 border-b border-slate-100">
-              <span className="text-slate-500">المصروفات المطلوبة:</span>
+              <span className="text-slate-500">المصروفات المطلوبة للشهر:</span>
               <span className="font-semibold text-slate-800">{formatCurrency(receiptData.requiredFee)}</span>
             </div>
-            <div className="flex justify-between py-1 border-b border-slate-100 bg-emerald-50/70 p-2 rounded-lg">
-              <span className="font-bold text-emerald-900">المبلغ المسدد الآن:</span>
-              <span className="font-black text-base text-emerald-700">{formatCurrency(receiptData.amountPaidNow)}</span>
-            </div>
+
+            {/* Main Action Amount Highlight */}
+            {isRefund ? (
+              <div className="flex justify-between py-1 border-b border-slate-100 bg-rose-50/80 p-2.5 rounded-lg border border-rose-200">
+                <span className="font-bold text-rose-900">المبلغ المسترجع:</span>
+                <span className="font-black text-base text-rose-700">{formatCurrency(receiptData.amountPaidNow)}</span>
+              </div>
+            ) : (
+              <div className="flex justify-between py-1 border-b border-slate-100 bg-emerald-50/70 p-2 rounded-lg">
+                <span className="font-bold text-emerald-900">المبلغ المسدد الآن:</span>
+                <span className="font-black text-base text-emerald-700">{formatCurrency(receiptData.amountPaidNow)}</span>
+              </div>
+            )}
+
+            {isRefund && receiptData.refundReason && (
+              <div className="flex justify-between py-1 border-b border-slate-100 text-[11px] text-slate-600">
+                <span className="text-slate-500">سبب الاسترجاع:</span>
+                <span className="font-medium text-rose-900">{receiptData.refundReason}</span>
+              </div>
+            )}
+
             <div className="flex justify-between py-1 border-b border-slate-100">
-              <span className="text-slate-500">إجمالي ما تم سداده للشهر:</span>
+              <span className="text-slate-500">المسدد النهائي المتبقي بالشهر:</span>
               <span className="font-bold text-slate-900">{formatCurrency(receiptData.totalPaid)}</span>
             </div>
-            <div className={`flex justify-between py-1 p-2 rounded-lg ${receiptData.remaining > 0 ? 'bg-amber-50 text-amber-900' : 'bg-emerald-50 text-emerald-900'}`}>
-              <span className="font-bold">المبلغ المتبقي:</span>
+
+            <div className={`flex justify-between py-1.5 p-2 rounded-lg ${
+              receiptData.remaining > 0 ? 'bg-amber-50 text-amber-900' : 'bg-emerald-50 text-emerald-900'
+            }`}>
+              <span className="font-bold">المتبقي المطلوب على الطالب:</span>
               <span className="font-black text-sm">
                 {receiptData.remaining > 0 ? formatCurrency(receiptData.remaining) : '0 ج.م (خالص بالكامل 🎉)'}
               </span>
             </div>
+
             <div className="flex justify-between py-1 text-slate-500 pt-2 text-[11px]">
-              <span>تاريخ وساعة السداد:</span>
+              <span>تاريخ وساعة العملية:</span>
               <span>{formatDateTime(receiptData.date)}</span>
             </div>
             <div className="flex justify-between py-0.5 text-slate-500 text-[11px]">
-              <span>المستلم:</span>
+              <span>المسؤول:</span>
               <span>{receiptData.recordedBy}</span>
             </div>
           </div>
 
           {/* Footer note in receipt */}
           <div className="text-center text-[10px] text-slate-400 border-t border-dashed border-slate-200 pt-3">
-            شكراً لالتزامكم ونتمنى لجميع أبنائنا وبناتنا دوام التفوق والنجاح.
+            {isRefund 
+              ? 'إشعار استرجاع مالي رسمي موثق بقيد الخزينة.' 
+              : 'شكراً لالتزامكم ونتمنى لجميع أبنائنا وبناتنا دوام التفوق والنجاح.'}
           </div>
         </div>
 
@@ -147,10 +210,12 @@ export const ReceiptModal: React.FC<Props> = ({
             href={parentWhatsAppUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm transition text-xs sm:text-sm"
+            className={`w-full py-2.5 px-4 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm transition text-xs sm:text-sm ${
+              isRefund ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
+            }`}
           >
             <MessageCircle className="w-4 h-4" />
-            إرسال إيصال وتفاصيل الحساب لولي الأمر (واتساب)
+            {isRefund ? 'إرسال إشعار الاسترجاع لولي الأمر (واتساب)' : 'إرسال إيصال وتفاصيل الحساب لولي الأمر (واتساب)'}
           </a>
 
           {studentWhatsAppUrl && (
@@ -158,7 +223,7 @@ export const ReceiptModal: React.FC<Props> = ({
               href={studentWhatsAppUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="w-full py-2 px-4 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 rounded-xl font-semibold flex items-center justify-center gap-2 transition text-xs"
+              className="w-full py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 rounded-xl font-semibold flex items-center justify-center gap-2 transition text-xs"
             >
               <MessageCircle className="w-3.5 h-3.5" />
               إرسال نسخة لواتساب الطالب

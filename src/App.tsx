@@ -34,6 +34,7 @@ import { SettingsView } from './components/SettingsView';
 import { FeasibilityStudyModal } from './components/FeasibilityStudyModal';
 import { LoginScreen } from './components/LoginScreen';
 import { ResetSystemModal } from './components/ResetSystemModal';
+import { RefundModal } from './components/RefundModal';
 
 export default function App() {
   const teacherName = 'مستر أحمد الشعراوي';
@@ -74,6 +75,8 @@ export default function App() {
 
   const [isStudyModalOpen, setIsStudyModalOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
+  const [transactionToRefund, setTransactionToRefund] = useState<PaymentTransaction | null>(null);
   const [syncAlert, setSyncAlert] = useState<string | null>(null);
 
   // Handle device name update
@@ -434,6 +437,124 @@ export default function App() {
     }
   };
 
+  // Refund / Cancel Payment Transaction & update student ledger
+  const handleRefundPayment = async (payload: {
+    transactionId?: string;
+    studentId: string;
+    studentName: string;
+    studentCode: string;
+    monthKey: string;
+    monthLabel?: string;
+    refundAmount: number;
+    receiptNumber?: string;
+    reason: string;
+    recordedBy: string;
+    originalReceiptNumber?: string;
+  }) => {
+    const recordId = `${payload.studentId}_${payload.monthKey}`;
+    const targetStudent = students.find((s) => s.id === payload.studentId);
+    const currentRec = monthlyRecords[recordId];
+
+    const requiredFee = currentRec?.requiredAmount ?? (targetStudent?.monthlyFee || 250);
+    const prevPaid = currentRec?.paidAmount ?? 0;
+    const newPaid = Math.max(0, prevPaid - payload.refundAmount);
+    const newRemaining = Math.max(0, requiredFee - newPaid);
+
+    let status: 'paid' | 'partial' | 'unpaid' = 'unpaid';
+    if (newPaid >= requiredFee && requiredFee > 0) {
+      status = 'paid';
+    } else if (newPaid > 0) {
+      status = 'partial';
+    }
+
+    const now = new Date().toISOString();
+    const receiptNo = payload.receiptNumber || `REF-${generateReceiptNumber().replace('REC-', '')}`;
+
+    try {
+      // 1. Update Monthly Record in Firestore
+      const recordDocRef = doc(db, 'monthly_records', recordId);
+      await setDoc(recordDocRef, {
+        id: recordId,
+        studentId: payload.studentId,
+        studentName: payload.studentName,
+        studentCode: payload.studentCode,
+        monthKey: payload.monthKey,
+        monthLabel: payload.monthLabel || getMonthLabel(payload.monthKey),
+        requiredAmount: requiredFee,
+        paidAmount: newPaid,
+        remainingAmount: newRemaining,
+        status,
+        lastPaymentDate: now,
+        notes: `تم استرجاع مبلغ ${payload.refundAmount} ج.م في ${new Date().toLocaleDateString('ar-EG')} (السبب: ${payload.reason})`,
+        updatedBy: payload.recordedBy,
+        updatedAt: now,
+      }, { merge: true });
+
+      // 2. If a specific transaction is being cancelled/refunded, mark it
+      if (payload.transactionId) {
+        const origTransDocRef = doc(db, 'payment_transactions', payload.transactionId);
+        await setDoc(origTransDocRef, {
+          isRefunded: true,
+          refundedAmount: payload.refundAmount,
+          refundReason: payload.reason,
+          refundDate: now,
+          refundedBy: payload.recordedBy,
+        }, { merge: true });
+      }
+
+      // 3. Add Refund Transaction Audit Log (negative amount so net treasury adjusts)
+      const transId = `tx_ref_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+      const transDocRef = doc(db, 'payment_transactions', transId);
+      await setDoc(transDocRef, {
+        id: transId,
+        studentId: payload.studentId,
+        studentName: payload.studentName,
+        studentCode: payload.studentCode,
+        monthKey: payload.monthKey,
+        amount: -payload.refundAmount,
+        type: 'refund',
+        receiptNumber: receiptNo,
+        originalTransactionId: payload.transactionId || '',
+        originalReceiptNumber: payload.originalReceiptNumber || '',
+        recordedBy: payload.recordedBy,
+        refundReason: payload.reason,
+        note: `استرجاع مبلغ: ${payload.reason}`,
+        paymentDate: now,
+        createdAt: now,
+      });
+
+      // 4. Prepare Receipt Modal Data (Refund Receipt)
+      setReceiptData({
+        receiptNumber: receiptNo,
+        studentName: payload.studentName,
+        studentCode: payload.studentCode,
+        monthLabel: payload.monthLabel || getMonthLabel(payload.monthKey),
+        amountPaidNow: payload.refundAmount,
+        totalPaid: newPaid,
+        requiredFee,
+        remaining: newRemaining,
+        recordedBy: payload.recordedBy,
+        date: now,
+        parentPhone: targetStudent?.parentPhone || '',
+        studentPhone: targetStudent?.phone || '',
+        isRefund: true,
+        refundReason: payload.reason,
+      });
+      setIsReceiptModalOpen(true);
+
+      setSyncAlert(`↩️ تم بنجاح استرجاع مبلغ ${payload.refundAmount} ج.م للطالب (${payload.studentName}) وتحديث الخزينة وحسابه فوراً!`);
+      setTimeout(() => setSyncAlert(null), 7000);
+
+      return {
+        receiptNumber: receiptNo,
+        totalPaid: newPaid,
+        remaining: newRemaining,
+      };
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `monthly_records/${recordId}`);
+    }
+  };
+
   // Seed sample data for testing
   const handleSeedSampleData = async (count: number) => {
     const now = new Date().toISOString();
@@ -508,15 +629,16 @@ export default function App() {
     const rec = monthlyRecords[recKey];
     const targetStudent = students.find((s) => s.id === trans.studentId);
     const req = rec?.requiredAmount ?? (targetStudent?.monthlyFee || 250);
-    const paid = rec?.paidAmount ?? trans.amount;
+    const paid = rec?.paidAmount ?? (trans.type === 'refund' ? 0 : trans.amount);
     const remaining = rec?.remainingAmount ?? Math.max(0, req - paid);
+    const isRefund = trans.type === 'refund' || !!trans.isRefunded;
 
     setReceiptData({
       receiptNumber: trans.receiptNumber,
       studentName: trans.studentName,
       studentCode: trans.studentCode,
       monthLabel: getMonthLabel(trans.monthKey),
-      amountPaidNow: trans.amount,
+      amountPaidNow: Math.abs(trans.amount),
       totalPaid: paid,
       requiredFee: req,
       remaining,
@@ -524,6 +646,8 @@ export default function App() {
       date: trans.paymentDate || trans.createdAt,
       parentPhone: targetStudent?.parentPhone || '',
       studentPhone: targetStudent?.phone || '',
+      isRefund,
+      refundReason: trans.refundReason,
     });
     setIsReceiptModalOpen(true);
   };
@@ -600,6 +724,10 @@ export default function App() {
           <TreasuryHistory
             transactions={transactions}
             onViewReceipt={handleViewReceiptFromTreasury}
+            onOpenRefund={(t) => {
+              setTransactionToRefund(t);
+              setIsRefundModalOpen(true);
+            }}
             teacherName={teacherName}
           />
         )}
@@ -662,6 +790,18 @@ export default function App() {
         monthLabel={currentMonthLabel}
         existingRecord={studentForPayment ? monthlyRecords[`${studentForPayment.id}_${currentMonthKey}`] : null}
         onSavePayment={handleSavePayment}
+        onRefundPayment={handleRefundPayment}
+        currentDeviceName={currentDeviceName}
+      />
+
+      <RefundModal
+        isOpen={isRefundModalOpen}
+        onClose={() => {
+          setIsRefundModalOpen(false);
+          setTransactionToRefund(null);
+        }}
+        transaction={transactionToRefund}
+        onConfirmRefund={handleRefundPayment}
         currentDeviceName={currentDeviceName}
       />
 

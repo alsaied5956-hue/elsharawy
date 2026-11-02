@@ -115,6 +115,34 @@ ${statusText}
   return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
 }
 
+export function createRefundWhatsAppLink(
+  phone: string,
+  studentName: string,
+  monthLabel: string,
+  refundAmount: number,
+  receiptNumber: string,
+  remainingAmount: number,
+  reason: string,
+  teacherName: string = 'مستر أحمد الشعراوي'
+): string {
+  const cleanPhone = cleanPhoneNumber(phone);
+  const message = `السلام عليكم ورحمة الله وبركاته 🌹
+تحياتنا لسيادتكم من مكتب ${teacherName}.
+
+بخصوص الطالب / الطالبة: ${studentName}
+
+↩️ تم استرجاع مبلغ وقدره: ${refundAmount} ج.م
+بخصوص مصروفات شهر: (${monthLabel})
+رقم إيصال الاسترجاع: ${receiptNumber}
+سبب الاسترجاع: ${reason || 'بناءً على طلب ولي الأمر'}
+المتبقي الحالي على الطالب للشهر: ${remainingAmount} ج.م
+
+نسعد دائماً بخدمتكم وتواصلكم معنا.
+📞 للاستفسارات يرجى التواصل معنا مباشرة عبر هذا الرقم.`;
+
+  return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+}
+
 export function exportToExcel(students: Student[], monthlyRecords: Record<string, MonthlyRecord>, currentMonthKey: string) {
   const monthLabel = getMonthLabel(currentMonthKey);
   
@@ -157,18 +185,20 @@ export function exportToExcel(students: Student[], monthlyRecords: Record<string
 export function exportTransactionsToExcel(transactions: PaymentTransaction[]) {
   const data = transactions.map((t, idx) => ({
     'م': idx + 1,
+    'نوع الحركة': t.type === 'refund' ? 'استرجاع مبلغ ↩️' : 'سداد مصروفات 💳',
+    'حالة الحركة': t.isRefunded ? 'مسترجع / ملغي' : (t.type === 'refund' ? 'حركة استرجاع' : 'ساري ومؤكد'),
     'رقم الإيصال': t.receiptNumber,
-    'تاريخ السداد': formatDateTime(t.paymentDate),
+    'تاريخ وتوقيت العملية': formatDateTime(t.paymentDate || t.createdAt),
     'كود الطالب': t.studentCode,
     'اسم الطالب': t.studentName,
     'شهر الاستحقاق': getMonthLabel(t.monthKey),
-    'المبلغ المدفوع (ج.م)': t.amount,
-    'المستلم / الأسيستنت': t.recordedBy || 'المكتب',
-    'ملاحظة': t.note || '-'
+    'المبلغ (ج.م)': t.amount,
+    'المسؤول / الأسيستنت': t.recordedBy || 'المكتب',
+    'سبب أو ملاحظة': t.refundReason || t.note || '-'
   }));
 
   const worksheet = XLSX.utils.json_to_sheet(data);
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'سجل_المدفوعات');
-  XLSX.writeFile(workbook, `سجل_المدفوعات_الخزينة_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'سجل_الخزينة_والحركات');
+  XLSX.writeFile(workbook, `سجل_الخزينة_مستر_احمد_الشعراوي_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }

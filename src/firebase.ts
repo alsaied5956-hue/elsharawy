@@ -2,24 +2,10 @@ import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
-const defaultConfig = {
-  projectId: "vernal-river-z3rp2",
-  appId: "1:83078664809:web:595539c6fe4a86aabd08f8",
-  apiKey: "AIzaSyAhYLVahyDnz5rz1EunKTeGpKuND3hdvqg",
-  authDomain: "vernal-river-z3rp2.firebaseapp.com",
-  firestoreDatabaseId: "ai-studio-5e83644e-a0bb-4a3a-ac79-a4e70377c21a",
-  storageBucket: "vernal-river-z3rp2.firebasestorage.app",
-  messagingSenderId: "83078664809",
-  measurementId: "",
-  oAuthClientId: "83078664809-2itk8r7e70f6g6aspdunr7plt62qpcnc.apps.googleusercontent.com",
-  recaptchaSiteKey: ""
-};
-
-const resolvedConfig = { ...defaultConfig, ...(firebaseConfig || {}) };
-const app = initializeApp(resolvedConfig);
+const app = initializeApp(firebaseConfig);
 
 // CRITICAL: Initialize Firestore with the exact database ID from config
-const dbId = resolvedConfig.firestoreDatabaseId;
+const dbId = (firebaseConfig as any).firestoreDatabaseId;
 export const db = getFirestore(app, dbId);
 
 export enum OperationType {

@@ -28,9 +28,7 @@ export const RefundModal: React.FC<Props> = ({
   onConfirmRefund,
   currentDeviceName,
 }) => {
-  if (!isOpen || !transaction) return null;
-
-  const maxRefundable = Math.max(0, transaction.amount - (transaction.refundedAmount || 0));
+  const maxRefundable = transaction ? Math.max(0, transaction.amount - (transaction.refundedAmount || 0)) : 0;
   const [refundAmount, setRefundAmount] = useState<number | ''>(maxRefundable);
   const [reason, setReason] = useState<string>('اعتذار عن الشهر وسحب المبلغ كاش');
   const [recordedBy, setRecordedBy] = useState<string>(currentDeviceName || 'مستر أحمد الشعراوي');
@@ -38,12 +36,15 @@ export const RefundModal: React.FC<Props> = ({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!isOpen || !transaction) return;
     const maxVal = Math.max(0, transaction.amount - (transaction.refundedAmount || 0));
     setRefundAmount(maxVal);
     setReason('اعتذار عن الشهر وسحب المبلغ كاش');
     setRecordedBy(currentDeviceName || 'مستر أحمد الشعراوي');
     setError(null);
   }, [isOpen, transaction, currentDeviceName]);
+
+  if (!isOpen || !transaction) return null;
 
   const numRefund = typeof refundAmount === 'number' ? refundAmount : 0;
 

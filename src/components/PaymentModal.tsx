@@ -46,9 +46,7 @@ export const PaymentModal: React.FC<Props> = ({
   onRefundPayment,
   currentDeviceName,
 }) => {
-  if (!isOpen || !student) return null;
-
-  const requiredFee = existingRecord?.requiredAmount ?? student.monthlyFee;
+  const requiredFee = existingRecord?.requiredAmount ?? (student?.monthlyFee || 250);
   const previouslyPaid = existingRecord?.paidAmount ?? 0;
   const currentRemaining = Math.max(0, requiredFee - previouslyPaid);
 
@@ -68,16 +66,21 @@ export const PaymentModal: React.FC<Props> = ({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!isOpen || !student) return;
     // Reset defaults when modal opens
-    const rem = Math.max(0, requiredFee - previouslyPaid);
-    setPayingNow(rem > 0 ? rem : requiredFee);
-    setRefundAmount(previouslyPaid);
+    const req = existingRecord?.requiredAmount ?? student.monthlyFee;
+    const paid = existingRecord?.paidAmount ?? 0;
+    const rem = Math.max(0, req - paid);
+    setPayingNow(rem > 0 ? rem : req);
+    setRefundAmount(paid);
     setRecordedBy(currentDeviceName || 'مستر أحمد الشعراوي');
     setNote('');
     setRefundReason('اعتذار عن الشهر واسترداد المبلغ');
     setError(null);
     setMode('pay');
-  }, [isOpen, student, existingRecord, currentDeviceName, requiredFee, previouslyPaid]);
+  }, [isOpen, student, existingRecord, currentDeviceName]);
+
+  if (!isOpen || !student) return null;
 
   const numPayingNow = typeof payingNow === 'number' ? payingNow : 0;
   const numRefundAmount = typeof refundAmount === 'number' ? refundAmount : 0;

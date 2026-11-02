@@ -782,28 +782,32 @@ export default function App() {
         defaultFee={defaultFee}
       />
 
-      <PaymentModal
-        isOpen={isPaymentModalOpen}
-        onClose={() => setIsPaymentModalOpen(false)}
-        student={studentForPayment}
-        monthKey={currentMonthKey}
-        monthLabel={currentMonthLabel}
-        existingRecord={studentForPayment ? monthlyRecords[`${studentForPayment.id}_${currentMonthKey}`] : null}
-        onSavePayment={handleSavePayment}
-        onRefundPayment={handleRefundPayment}
-        currentDeviceName={currentDeviceName}
-      />
+      {isPaymentModalOpen && studentForPayment && (
+        <PaymentModal
+          isOpen={isPaymentModalOpen}
+          onClose={() => setIsPaymentModalOpen(false)}
+          student={studentForPayment}
+          monthKey={currentMonthKey}
+          monthLabel={currentMonthLabel}
+          existingRecord={monthlyRecords[`${studentForPayment.id}_${currentMonthKey}`] || null}
+          onSavePayment={handleSavePayment}
+          onRefundPayment={handleRefundPayment}
+          currentDeviceName={currentDeviceName}
+        />
+      )}
 
-      <RefundModal
-        isOpen={isRefundModalOpen}
-        onClose={() => {
-          setIsRefundModalOpen(false);
-          setTransactionToRefund(null);
-        }}
-        transaction={transactionToRefund}
-        onConfirmRefund={handleRefundPayment}
-        currentDeviceName={currentDeviceName}
-      />
+      {isRefundModalOpen && transactionToRefund && (
+        <RefundModal
+          isOpen={isRefundModalOpen}
+          onClose={() => {
+            setIsRefundModalOpen(false);
+            setTransactionToRefund(null);
+          }}
+          transaction={transactionToRefund}
+          onConfirmRefund={handleRefundPayment}
+          currentDeviceName={currentDeviceName}
+        />
+      )}
 
       <ReceiptModal
         isOpen={isReceiptModalOpen}

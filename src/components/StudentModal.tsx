@@ -26,7 +26,7 @@ export const StudentModal: React.FC<Props> = ({
     phone: '',
     parentPhone: '',
     parentRelation: 'الأب',
-    grade: GRADES_LIST[3], // الصف الأول الثانوي default
+    grade: GRADES_LIST[0], // ثانية باكالوريا default
     groupName: '',
     monthlyFee: defaultFee,
     status: 'active' as 'active' | 'inactive',
@@ -45,7 +45,7 @@ export const StudentModal: React.FC<Props> = ({
         phone: initialStudent.phone || '',
         parentPhone: initialStudent.parentPhone || '',
         parentRelation: initialStudent.parentRelation || 'الأب',
-        grade: initialStudent.grade || GRADES_LIST[3],
+        grade: initialStudent.grade || GRADES_LIST[0],
         groupName: initialStudent.groupName || '',
         monthlyFee: initialStudent.monthlyFee ?? defaultFee,
         status: initialStudent.status || 'active',
@@ -59,7 +59,7 @@ export const StudentModal: React.FC<Props> = ({
         phone: '',
         parentPhone: '',
         parentRelation: 'الأب',
-        grade: GRADES_LIST[3],
+        grade: GRADES_LIST[0],
         groupName: '',
         monthlyFee: defaultFee,
         status: 'active',

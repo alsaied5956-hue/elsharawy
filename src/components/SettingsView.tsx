@@ -24,7 +24,7 @@ interface Props {
   currentDeviceName: string;
   onUpdateDeviceName: (name: string) => void;
   defaultFee: number;
-  onUpdateDefaultFee: (fee: number) => void;
+  onUpdateDefaultFee: (fee: number) => Promise<void>;
   onSeedSampleData: (count: number) => Promise<void>;
   onBulkImportStudents: (students: Omit<Student, 'id' | 'createdAt' | 'updatedAt'>[]) => Promise<void>;
   teacherName: string;
@@ -45,9 +45,15 @@ export const SettingsView: React.FC<Props> = ({
 }) => {
   const [deviceName, setDeviceName] = useState(currentDeviceName);
   const [fee, setFee] = useState(defaultFee);
+  const [isSavingFee, setIsSavingFee] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isSeeding, setIsSeeding] = useState(false);
   const [seedMessage, setSeedMessage] = useState<string | null>(null);
+
+  // Sync fee when changed from another device
+  React.useEffect(() => {
+    setFee(defaultFee);
+  }, [defaultFee]);
 
   // Password change state
   const [currentPass, setCurrentPass] = useState('');
@@ -57,12 +63,17 @@ export const SettingsView: React.FC<Props> = ({
   const [passSuccess, setPassSuccess] = useState(false);
   const [isSavingPass, setIsSavingPass] = useState(false);
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    onUpdateDeviceName(deviceName.trim() || 'الهاتف الرئيسي');
-    onUpdateDefaultFee(Number(fee) || 250);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2500);
+    try {
+      setIsSavingFee(true);
+      onUpdateDeviceName(deviceName.trim() || 'الهاتف الرئيسي');
+      await onUpdateDefaultFee(Number(fee) || 250);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3500);
+    } finally {
+      setIsSavingFee(false);
+    }
   };
 
   const handlePasswordChange = async (e: React.FormEvent) => {
@@ -132,7 +143,7 @@ export const SettingsView: React.FC<Props> = ({
           name: String(row['اسم الطالب'] || row['الاسم'] || row['Name'] || 'طالب جديد'),
           phone: String(row['رقم هاتف الطالب'] || row['رقم الطالب'] || row['Phone'] || ''),
           parentPhone: String(row['رقم ولي الأمر'] || row['ولي الأمر'] || row['ParentPhone'] || '01000000000'),
-          grade: String(row['الصف الدراسي'] || row['الصف'] || row['Grade'] || GRADES_LIST[3]),
+          grade: String(row['الصف الدراسي'] || row['الصف'] || row['Grade'] || GRADES_LIST[0]),
           groupName: String(row['المجموعة'] || row['الميعاد'] || ''),
           monthlyFee: Number(row['المصروفات'] || row['المبلغ'] || fee || 250),
           status: 'active',
@@ -166,10 +177,10 @@ export const SettingsView: React.FC<Props> = ({
           </div>
           <div>
             <h3 className="font-bold text-slate-900 text-base">
-              هوية هذا الهاتف / الجهاز في المنظومة
+              هوية هذا الهاتف / الجهاز وإعدادات المصروفات
             </h3>
             <p className="text-xs text-slate-500">
-              يُسجل هذا الاسم تلقائياً مع كل عملية سداد تقوم بها من هذا الهاتف لتمييز من استلم المبلغ
+              يُسجل هذا الاسم تلقائياً مع كل عملية سداد، مع إمكانية تعديل السعر وتطبيقه لحظياً على جميع الأجهزة
             </p>
           </div>
         </div>
@@ -192,7 +203,7 @@ export const SettingsView: React.FC<Props> = ({
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                المصروفات الشهرية الافتراضية للطلاب الجدد (ج.م) *
+                المصروفات الشهرية لجميع الطلاب (ج.م) *
               </label>
               <input
                 type="number"
@@ -201,8 +212,11 @@ export const SettingsView: React.FC<Props> = ({
                 step="10"
                 value={fee}
                 onChange={(e) => setFee(Number(e.target.value))}
-                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500 text-emerald-900"
               />
+              <p className="text-[11px] text-slate-500 mt-1">
+                ⚡ عند حفظ السعر، يتم فوراً تحديث المطلوب لجميع الطلاب وإعادة حساب المتبقي ومزامنته لحظياً على جميع أجهزة المساعدين.
+              </p>
             </div>
           </div>
 
@@ -210,16 +224,17 @@ export const SettingsView: React.FC<Props> = ({
             {savedSuccess ? (
               <span className="text-emerald-700 text-xs font-bold flex items-center gap-1.5 animate-in fade-in">
                 <CheckCircle className="w-4 h-4" />
-                تم حفظ وتحديث الإعدادات بنجاح
+                تم حفظ وتحديث السعر وإعادة حساب كل شيء بنجاح على جميع الأجهزة!
               </span>
             ) : <span />}
 
             <button
               type="submit"
-              className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow transition"
+              disabled={isSavingFee}
+              className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow transition disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
-              حفظ التعديلات
+              <span>{isSavingFee ? 'جاري إعادة الحساب والمزامنة للجميع...' : 'حفظ وتطبيق السعر للجميع'}</span>
             </button>
           </div>
         </form>

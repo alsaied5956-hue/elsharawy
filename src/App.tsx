@@ -114,6 +114,27 @@ export default function App() {
     return () => unsubAuth();
   }, []);
 
+  // 2.5 Real-time Listener for System Pricing (Default fee synchronized across all devices)
+  useEffect(() => {
+    const pricingDocRef = doc(db, 'system_settings', 'pricing');
+    const unsubPricing = onSnapshot(pricingDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (typeof data?.defaultFee === 'number') {
+          setDefaultFee(data.defaultFee);
+        }
+      } else {
+        // Initialize with default 250
+        setDoc(pricingDocRef, {
+          defaultFee: 250,
+          updatedAt: new Date().toISOString(),
+        }).catch(() => {});
+      }
+    });
+
+    return () => unsubPricing();
+  }, []);
+
   // 3. Real-time Listeners for Students (Instant sync across phones)
   useEffect(() => {
     const studentsCol = collection(db, 'students');
@@ -214,6 +235,60 @@ export default function App() {
     }, { merge: true });
     setSystemPassword(newPass);
     return true;
+  };
+
+  // Update Fee across all students, monthly records, and all devices in real-time
+  const handleUpdateDefaultFee = async (newFee: number) => {
+    try {
+      const now = new Date().toISOString();
+
+      // 1. Update system pricing document in Firestore (triggers real-time on all phones)
+      const pricingDocRef = doc(db, 'system_settings', 'pricing');
+      await setDoc(pricingDocRef, {
+        defaultFee: newFee,
+        updatedAt: now,
+      }, { merge: true });
+      setDefaultFee(newFee);
+
+      // 2. Update monthlyFee on all students in Firestore
+      const studentsSnap = await getDocs(collection(db, 'students'));
+      const studentUpdates = studentsSnap.docs.map((sDoc) =>
+        setDoc(sDoc.ref, {
+          monthlyFee: newFee,
+          updatedAt: now,
+        }, { merge: true })
+      );
+      await Promise.all(studentUpdates);
+
+      // 3. Recalculate ALL monthly records in Firestore so:
+      // - requiredAmount = newFee
+      // - remainingAmount = Math.max(0, newFee - paidAmount)
+      // - status = paidAmount >= newFee ? 'paid' : (paidAmount > 0 ? 'partial' : 'unpaid')
+      const recordsSnap = await getDocs(collection(db, 'monthly_records'));
+      const recordUpdates = recordsSnap.docs.map((rDoc) => {
+        const rec = rDoc.data() as MonthlyRecord;
+        const paid = rec.paidAmount || 0;
+        const newRemaining = Math.max(0, newFee - paid);
+        let status: 'paid' | 'partial' | 'unpaid' = 'unpaid';
+        if (paid >= newFee && newFee > 0) {
+          status = 'paid';
+        } else if (paid > 0) {
+          status = 'partial';
+        }
+        return setDoc(rDoc.ref, {
+          requiredAmount: newFee,
+          remainingAmount: newRemaining,
+          status,
+          updatedAt: now,
+        }, { merge: true });
+      });
+      await Promise.all(recordUpdates);
+
+      setSyncAlert(`✅ تم تغيير السعر إلى ${newFee} ج.م، وتحديث المطلوب لجميع الطلاب (${studentsSnap.docs.length} طالب) وإعادة حساب المتبقي ومزامنته لحظياً على جميع الأجهزة!`);
+      setTimeout(() => setSyncAlert(null), 6000);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'system_settings/pricing');
+    }
   };
 
   // Calculate Next Suggested Student Code
@@ -329,12 +404,13 @@ export default function App() {
       const transPromises = transSnap.docs.map((d) => deleteDoc(d.ref));
       await Promise.all(transPromises);
 
+      // Explicitly keep system_settings/auth (password) untouched and intact
       // Reset local state
       setStudents([]);
       setMonthlyRecords({});
       setTransactions([]);
 
-      setSyncAlert('🎉 تم بنجاح تقفيل جميع الحسابات وتصفير المنظومة والبدء من جديد لسنة دراسية جديدة!');
+      setSyncAlert('🎉 تم بنجاح تقفيل جميع الحسابات وتصفير الطلاب والبدء من جديد (مع بقاء كلمة المرور كما هي دون أي تغيير)!');
       setTimeout(() => setSyncAlert(null), 6000);
       return true;
     } catch (err) {
@@ -738,7 +814,7 @@ export default function App() {
             currentDeviceName={currentDeviceName}
             onUpdateDeviceName={handleUpdateDeviceName}
             defaultFee={defaultFee}
-            onUpdateDefaultFee={setDefaultFee}
+            onUpdateDefaultFee={handleUpdateDefaultFee}
             onSeedSampleData={handleSeedSampleData}
             onBulkImportStudents={handleBulkImportStudents}
             teacherName={teacherName}

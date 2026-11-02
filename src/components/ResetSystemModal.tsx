@@ -135,10 +135,15 @@ export const ResetSystemModal: React.FC<Props> = ({
 
           {/* Step 2: System Password Entry */}
           <div className="space-y-1.5">
-            <label className="block text-xs font-bold text-slate-800 flex items-center gap-1.5">
-              <Lock className="w-4 h-4 text-red-600" />
-              الخطوة الثانية: أدخل كلمة مرور النظام (Password) للتحقق: *
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <Lock className="w-4 h-4 text-red-600" />
+                الخطوة الثانية: أدخل كلمة مرور النظام (Password) للتحقق: *
+              </label>
+              <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
+                🔒 كلمة المرور لن تتغير وستبقى كما هي
+              </span>
+            </div>
             <input
               type="password"
               required
@@ -147,9 +152,12 @@ export const ResetSystemModal: React.FC<Props> = ({
                 setPassword(e.target.value);
                 if (error) setError(null);
               }}
-              placeholder="أدخل كلمة المرور..."
+              placeholder="أدخل كلمة المرور الحالية..."
               className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-bold focus:bg-white focus:ring-2 focus:ring-red-500"
             />
+            <p className="text-[11px] text-slate-500">
+              تأكيد أمان: كلمة المرور الخاصة بك محفوظة بشكل دائم ولن يتم مسها أو تغييرها بعملية التقفيل.
+            </p>
           </div>
 
           {/* Step 3: Confirmation phrase */}

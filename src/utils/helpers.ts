@@ -7,13 +7,8 @@ export const ARABIC_MONTHS = [
 ];
 
 export const GRADES_LIST = [
-  'الصف الأول الإعدادي',
-  'الصف الثاني الإعدادي',
-  'الصف الثالث الإعدادي',
-  'الصف الأول الثانوي',
-  'الصف الثاني الثانوي',
-  'الصف الثالث الثانوي',
-  'أخرى / خاص'
+  'ثانية باكالوريا',
+  'ثالثة ثانوي'
 ];
 
 export function getAcademicMonths(): MonthOption[] {

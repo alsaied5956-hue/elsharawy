@@ -18,7 +18,7 @@ import {
 import * as XLSX from 'xlsx';
 import { Student } from '../types';
 import { SAMPLE_STUDENTS } from '../utils/sampleData';
-import { GRADES_LIST } from '../utils/helpers';
+import { GRADES_LIST, parseStudentsFromExcel } from '../utils/helpers';
 
 interface Props {
   currentDeviceName: string;
@@ -125,45 +125,30 @@ export const SettingsView: React.FC<Props> = ({
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws) as any[];
+    try {
+      setIsSeeding(true);
+      setSeedMessage('جاري قراءة ملف Excel وتجهيز بيانات الطلاب...');
+      const imported = await parseStudentsFromExcel(file, Number(fee) || defaultFee);
 
-        const imported: Omit<Student, 'id' | 'createdAt' | 'updatedAt'>[] = data.map((row, idx) => ({
-          studentCode: String(row['كود الطالب'] || row['الكود'] || row['Code'] || 2000 + idx),
-          name: String(row['اسم الطالب'] || row['الاسم'] || row['Name'] || 'طالب جديد'),
-          phone: String(row['رقم هاتف الطالب'] || row['رقم الطالب'] || row['Phone'] || ''),
-          parentPhone: String(row['رقم ولي الأمر'] || row['ولي الأمر'] || row['ParentPhone'] || '01000000000'),
-          grade: String(row['الصف الدراسي'] || row['الصف'] || row['Grade'] || GRADES_LIST[0]),
-          groupName: String(row['المجموعة'] || row['الميعاد'] || ''),
-          monthlyFee: Number(row['المصروفات'] || row['المبلغ'] || fee || 250),
-          status: 'active',
-          joinedDate: new Date().toISOString().slice(0, 10),
-          notes: String(row['ملاحظات'] || ''),
-        }));
-
-        if (imported.length > 0) {
-          setIsSeeding(true);
-          await onBulkImportStudents(imported);
-          setSeedMessage(`تم استيراد ${imported.length} طالب من ملف Excel بنجاح!`);
-          setTimeout(() => setSeedMessage(null), 4000);
-        }
-      } catch (error) {
-        alert('حدث خطأ أثناء قراءة ملف Excel، يرجى التأكد من صيغة الملف');
-      } finally {
-        setIsSeeding(false);
+      if (imported.length > 0) {
+        await onBulkImportStudents(imported);
+        setSeedMessage(`🎉 تم استيراد ومعالجة ${imported.length} طالب من ملف Excel بنجاح دون أي تضارب!`);
+        setTimeout(() => setSeedMessage(null), 5000);
+      } else {
+        alert('لم يتم العثور على بيانات طلاب صالحة في الملف، يرجى التأكد من احتواء الملف على عمود اسم الطالب والكود.');
+        setSeedMessage(null);
       }
-    };
-    reader.readAsBinaryString(file);
+    } catch (error) {
+      alert('حدث خطأ أثناء قراءة ملف Excel، يرجى التأكد من صيغة الملف');
+      setSeedMessage(null);
+    } finally {
+      setIsSeeding(false);
+      e.target.value = '';
+    }
   };
 
   return (
@@ -411,21 +396,40 @@ export const SettingsView: React.FC<Props> = ({
           </div>
           <div>
             <h3 className="font-bold text-slate-900 text-base">
-              استيراد قائمة الطلاب من ملف Excel خارجي
+              استيراد قائمة الطلاب من ملف Excel المتوافق
             </h3>
             <p className="text-xs text-slate-500">
-              إذا كان لديك ملف Excel به أسماء طلابك (حتى أكثر من 1000 طالب)، يمكنك رفعه وسيتعرف النظام عليه فوراً
+              متوافق 100% مع شيت الإكسيل الخاص بك ومعالجة أكثر من 1000 طالب دون أي تضارب أو تكرار
             </p>
           </div>
         </div>
 
-        <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center hover:border-emerald-500 transition-colors bg-slate-50/50">
-          <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-          <p className="text-xs text-slate-600 font-medium mb-3">
-            اختر ملف Excel (.xlsx أو .xls) يحتوي على أعمدة (اسم الطالب، رقم ولي الأمر، الصف، المصروفات)
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4 text-xs space-y-2">
+          <div className="font-bold text-slate-800 flex items-center gap-1.5">
+            <span>📋 الأعمدة المعتمدة والمطابقة لشيت الإكسيل الخاص بك:</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {['الكود', 'اسم الطالب', 'المرحلة', 'الجنس', 'رقم الهاتف', 'رقم هاتف ولي الأمر', 'رقم هاتف ولي أمر آخر'].map((col) => (
+              <span key={col} className="px-2.5 py-1 bg-white border border-slate-300 text-slate-800 rounded-md font-bold text-[11px] shadow-2xs">
+                {col}
+              </span>
+            ))}
+          </div>
+          <ul className="text-[11px] text-slate-600 list-disc list-inside space-y-1 pt-1">
+            <li><strong>عدم التضارب:</strong> عند وجود طالب بنفس <strong>الكود</strong> يتم تحديث بياناته مباشرة دون تكراره، مع الحفاظ الكامل على سجل سداداته والخصومات الممنوحة له.</li>
+            <li><strong>المرحلة:</strong> يتم ضبطها تلقائياً على <strong>ثانية باكالوريا</strong> أو <strong>ثالثة ثانوي</strong> حسب العمود.</li>
+            <li><strong>الجنس والهاتف الإضافي:</strong> يتم حفظهما بصورة منظمة في ملاحظات الطالب.</li>
+            <li><strong>تخطي الكلمات التالفة:</strong> يتم تلقائياً تنقية عبارات مثل (لا يوجد) من أرقام الهواتف لضمان سلامة إرسال إيصالات الواتساب.</li>
+          </ul>
+        </div>
+
+        <div className="border-2 border-dashed border-emerald-300 rounded-xl p-6 text-center hover:border-emerald-500 transition-colors bg-emerald-50/20">
+          <Upload className="w-8 h-8 text-emerald-600 mx-auto mb-2" />
+          <p className="text-xs text-slate-700 font-bold mb-3">
+            اضغط لاختيار ملف Excel (.xlsx أو .xls) الموضح أعلاه لرفعه ومزامنته فوراً
           </p>
           <label className="inline-block px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-xs cursor-pointer shadow transition">
-            <span>اختر ملف Excel من جهازك</span>
+            <span>اختيار ملف Excel للطلاب</span>
             <input
               type="file"
               accept=".xlsx, .xls"

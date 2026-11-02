@@ -20,7 +20,8 @@ import {
   getCurrentMonthKey, 
   getMonthLabel, 
   exportToExcel, 
-  generateReceiptNumber 
+  generateReceiptNumber,
+  parseStudentsFromExcel
 } from './utils/helpers';
 import { SAMPLE_STUDENTS } from './utils/sampleData';
 import { Navbar } from './components/Navbar';
@@ -740,19 +741,81 @@ export default function App() {
     }
   };
 
-  // Bulk import from Excel
+  // Bulk import from Excel with deduplication by student code to prevent data collisions
   const handleBulkImportStudents = async (list: Omit<Student, 'id' | 'createdAt' | 'updatedAt'>[]) => {
     const now = new Date().toISOString();
-    for (let i = 0; i < list.length; i++) {
-      const item = list[i];
-      const studentId = `stu_imp_${Date.now()}_${i}`;
-      const docRef = doc(db, 'students', studentId);
-      await setDoc(docRef, {
-        ...item,
-        id: studentId,
-        createdAt: now,
-        updatedAt: now,
+    const existingByCode = new Map<string, Student>();
+    const existingByName = new Map<string, Student>();
+    students.forEach((s) => {
+      if (s.studentCode && s.studentCode.trim()) {
+        existingByCode.set(s.studentCode.trim(), s);
+      }
+      if (s.name && s.name.trim()) {
+        existingByName.set(s.name.trim(), s);
+      }
+    });
+
+    let updatedCount = 0;
+    let addedCount = 0;
+
+    const BATCH_SIZE = 400;
+    for (let i = 0; i < list.length; i += BATCH_SIZE) {
+      const chunk = list.slice(i, i + BATCH_SIZE);
+      const batch = writeBatch(db);
+
+      chunk.forEach((item, chunkIdx) => {
+        const cleanCode = item.studentCode ? item.studentCode.trim() : '';
+        const cleanName = item.name ? item.name.trim() : '';
+        const existing = (cleanCode ? existingByCode.get(cleanCode) : undefined) || (cleanName ? existingByName.get(cleanName) : undefined);
+
+        if (existing) {
+          updatedCount++;
+          const docRef = doc(db, 'students', existing.id);
+          batch.set(
+            docRef,
+            {
+              ...item,
+              id: existing.id,
+              studentCode: cleanCode || existing.studentCode,
+              // Preserve existing discounts if set in system
+              hasDiscount: existing.hasDiscount ?? item.hasDiscount,
+              discountAmount: existing.discountAmount ?? item.discountAmount,
+              discountReason: existing.discountReason || item.discountReason,
+              isFullExemption: existing.isFullExemption ?? item.isFullExemption,
+              createdAt: existing.createdAt || now,
+              updatedAt: now,
+            },
+            { merge: true }
+          );
+        } else {
+          addedCount++;
+          const generatedId = `stu_${cleanCode || Date.now()}_${i + chunkIdx}`;
+          const docRef = doc(db, 'students', generatedId);
+          batch.set(
+            docRef,
+            {
+              ...item,
+              id: generatedId,
+              studentCode: cleanCode || String(1001 + students.length + addedCount),
+              createdAt: now,
+              updatedAt: now,
+            },
+            { merge: true }
+          );
+        }
       });
+
+      await batch.commit();
+    }
+
+    setSyncAlert(`🎉 تم بنجاح معالجة واستيراد ${list.length} طالب من ملف Excel (${addedCount} طالب جديد، و${updatedCount} طالب تم تحديث بياناتهم) دون أي تضارب!`);
+    setTimeout(() => setSyncAlert(null), 6000);
+  };
+
+  const handleBulkImportExcelFile = async (file: File) => {
+    const imported = await parseStudentsFromExcel(file, defaultFee);
+    if (imported.length > 0) {
+      await handleBulkImportStudents(imported);
     }
   };
 
@@ -873,6 +936,7 @@ export default function App() {
             onDeleteStudent={handleDeleteStudent}
             onAddNewStudent={handleOpenAddNew}
             onExportExcel={handleExportExcel}
+            onBulkImportExcel={handleBulkImportExcelFile}
             teacherName={teacherName}
             availableGrades={availableGrades}
           />

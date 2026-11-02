@@ -205,3 +205,114 @@ export function exportTransactionsToExcel(transactions: PaymentTransaction[]) {
   XLSX.utils.book_append_sheet(workbook, worksheet, 'سجل_الخزينة_والحركات');
   XLSX.writeFile(workbook, `سجل_الخزينة_مستر_احمد_الشعراوي_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
+
+function getField(row: Record<string, any>, candidates: string[]): string {
+  const keys = Object.keys(row);
+  // 1. Exact match (case insensitive, trimmed)
+  for (const cand of candidates) {
+    const cLower = cand.trim().toLowerCase();
+    for (const k of keys) {
+      if (k.trim().toLowerCase() === cLower) {
+        const val = row[k];
+        if (val !== undefined && val !== null && String(val).trim() !== '') {
+          return String(val).trim();
+        }
+      }
+    }
+  }
+  // 2. Partial inclusion match
+  for (const cand of candidates) {
+    const cLower = cand.trim().toLowerCase();
+    for (const k of keys) {
+      if (k.trim().toLowerCase().includes(cLower)) {
+        const val = row[k];
+        if (val !== undefined && val !== null && String(val).trim() !== '') {
+          return String(val).trim();
+        }
+      }
+    }
+  }
+  return '';
+}
+
+export function parseStudentsFromExcel(
+  file: File,
+  defaultFee: number
+): Promise<Omit<Student, 'id' | 'createdAt' | 'updatedAt'>[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws) as Record<string, any>[];
+
+        const imported: Omit<Student, 'id' | 'createdAt' | 'updatedAt'>[] = [];
+
+        data.forEach((row, idx) => {
+          const rawCode = getField(row, ['الكود', 'كود الطالب', 'كود', 'code', 'id']);
+          const name = getField(row, ['اسم الطالب', 'الاسم', 'اسم', 'name']);
+          if (!name) return; // skip empty rows
+
+          const rawGrade = getField(row, ['المرحلة', 'المرحله', 'الصف الدراسي', 'الصف', 'grade']);
+          let grade = 'ثانية باكالوريا';
+          if (rawGrade.includes('ثالث') || rawGrade.includes('3')) {
+            grade = 'ثالثة ثانوي';
+          } else if (rawGrade.includes('ثان') || rawGrade.includes('2') || rawGrade.includes('باك')) {
+            grade = 'ثانية باكالوريا';
+          }
+
+          const gender = getField(row, ['الجنس', 'النوع', 'gender']);
+          const phone = getField(row, ['رقم الهاتف', 'رقم هاتف الطالب', 'تليفون الطالب', 'الهاتف', 'phone', 'mobile']);
+          const rawParent = getField(row, ['رقم هاتف ولي الأمر', 'رقم ولي الأمر', 'هاتف ولي الأمر', 'ولي الأمر', 'parent']);
+          const extraParent = getField(row, ['رقم هاتف ولي أمر آخر', 'رقم هاتف ولي امر اخر', 'ولي أمر آخر', 'رقم إضافي', 'هاتف آخر']);
+          const groupName = getField(row, ['المجموعة', 'الميعاد', 'مجموعة', 'group']);
+          const rawFee = getField(row, ['المصروفات', 'المبلغ', 'السعر', 'fee']);
+          const customNotes = getField(row, ['ملاحظات', 'notes']);
+
+          // Filter out placeholder words like "لا يوجد" from parent phone
+          let parentPhone = rawParent;
+          if (!parentPhone || parentPhone.includes('لا يوجد') || parentPhone.length < 5) {
+            parentPhone = phone || '01000000000';
+          }
+
+          // Combine notes cleanly
+          const notesArr: string[] = [];
+          if (gender) notesArr.push(`الجنس: ${gender}`);
+          if (extraParent && !extraParent.includes('لا يوجد')) {
+            notesArr.push(`هاتف ولي أمر إضافي: ${extraParent}`);
+          }
+          if (customNotes) notesArr.push(customNotes);
+
+          const studentCode = rawCode || String(1001 + idx);
+          const monthlyFee = rawFee ? Number(String(rawFee).replace(/[^0-9.]/g, '')) || defaultFee : defaultFee;
+
+          imported.push({
+            studentCode,
+            name,
+            phone: phone || '',
+            parentPhone,
+            grade,
+            groupName: groupName || '',
+            monthlyFee,
+            hasDiscount: false,
+            discountAmount: 0,
+            discountReason: '',
+            isFullExemption: false,
+            status: 'active',
+            joinedDate: new Date().toISOString().slice(0, 10),
+            notes: notesArr.join(' • '),
+          });
+        });
+
+        resolve(imported);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = (err) => reject(err);
+    reader.readAsBinaryString(file);
+  });
+}

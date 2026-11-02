@@ -20,6 +20,8 @@ interface Props {
     studentPhone?: string;
     isRefund?: boolean;
     refundReason?: string;
+    discountAmount?: number;
+    discountReason?: string;
   } | null;
   teacherName?: string;
 }
@@ -56,7 +58,9 @@ export const ReceiptModal: React.FC<Props> = ({
         receiptData.amountPaidNow,
         receiptData.remaining,
         receiptData.receiptNumber,
-        teacherName
+        teacherName,
+        receiptData.discountAmount,
+        receiptData.discountReason
       );
 
   const studentWhatsAppUrl = receiptData.studentPhone
@@ -151,6 +155,17 @@ export const ReceiptModal: React.FC<Props> = ({
               <span className="text-slate-500">المصروفات المطلوبة للشهر:</span>
               <span className="font-semibold text-slate-800">{formatCurrency(receiptData.requiredFee)}</span>
             </div>
+
+            {receiptData.discountAmount && receiptData.discountAmount > 0 ? (
+              <div className="flex justify-between py-1 border-b border-slate-100 bg-amber-50/60 px-2 py-1 rounded-md text-amber-900">
+                <span className="font-bold flex items-center gap-1">
+                  <span>🏷️ خصم خاص للطالب:</span>
+                </span>
+                <span className="font-bold text-amber-800 font-mono">
+                  -{formatCurrency(receiptData.discountAmount)} {receiptData.discountReason ? `(${receiptData.discountReason})` : ''}
+                </span>
+              </div>
+            ) : null}
 
             {/* Main Action Amount Highlight */}
             {isRefund ? (

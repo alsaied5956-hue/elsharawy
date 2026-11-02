@@ -256,13 +256,32 @@ export const PaymentModal: React.FC<Props> = ({
                 <span className="bg-emerald-100 text-emerald-800 text-xs font-mono font-bold px-2 py-0.5 rounded-md">
                   كود #{student.studentCode}
                 </span>
-                <span className="text-xs text-slate-500">{student.grade}</span>
+                <span className="text-xs text-slate-500 font-medium">{student.grade}</span>
+                {student.groupName && (
+                  <span className="text-xs text-slate-500 font-medium bg-slate-200/60 px-1.5 py-0.5 rounded">
+                    {student.groupName}
+                  </span>
+                )}
               </div>
               <h4 className="font-bold text-base text-slate-900">{student.name}</h4>
               <p className="text-xs text-slate-500 mt-0.5">
                 هاتف ولي الأمر: {student.parentPhone}
               </p>
             </div>
+
+            {(student.hasDiscount || (student.discountAmount && student.discountAmount > 0) || student.isFullExemption) && (
+              <div className="bg-amber-100 border border-amber-300 text-amber-900 px-3 py-1.5 rounded-xl text-center">
+                <span className="text-[10px] font-bold block text-amber-800">خصم خاص مطبق</span>
+                <span className="text-xs font-black">
+                  {student.isFullExemption ? 'إعفاء مجاني (100%)' : `-${student.discountAmount} ج.م`}
+                </span>
+                {student.discountReason && (
+                  <span className="text-[10px] text-amber-700 block truncate max-w-[120px]">
+                    {student.discountReason}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

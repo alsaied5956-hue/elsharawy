@@ -63,6 +63,13 @@ export default function App() {
   });
   const [defaultFee, setDefaultFee] = useState<number>(250);
 
+  // Dynamic Grades & Groups
+  const [customGrades, setCustomGrades] = useState<string[]>([]);
+  const availableGrades = useMemo(() => {
+    const base = ['ثانية باكالوريا', 'ثالثة ثانوي'];
+    return Array.from(new Set([...base, ...customGrades]));
+  }, [customGrades]);
+
   // Modals state
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
   const [studentToEdit, setStudentToEdit] = useState<Student | null>(null);
@@ -135,6 +142,21 @@ export default function App() {
     return () => unsubPricing();
   }, []);
 
+  // 2.6 Real-time Listener for Custom Groups / Educational Grades
+  useEffect(() => {
+    const gradesDocRef = doc(db, 'system_settings', 'grades');
+    const unsubGrades = onSnapshot(gradesDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (Array.isArray(data?.list)) {
+          setCustomGrades(data.list);
+        }
+      }
+    });
+
+    return () => unsubGrades();
+  }, []);
+
   // 3. Real-time Listeners for Students (Instant sync across phones)
   useEffect(() => {
     const studentsCol = collection(db, 'students');
@@ -142,9 +164,20 @@ export default function App() {
       studentsCol,
       (snapshot) => {
         const list: Student[] = [];
+        const baseAllowed = new Set(['ثانية باكالوريا', 'ثالثة ثانوي', ...customGrades]);
+
         snapshot.forEach((docSnap) => {
-          list.push({ id: docSnap.id, ...(docSnap.data() as any) });
+          const sData = docSnap.data() as Student;
+          // Clean up and enforce: Only ثانية باكالوريا or ثالثة ثانوي (or custom grades explicitly added)
+          if (sData.grade && !baseAllowed.has(sData.grade)) {
+            const normalizedGrade = sData.grade.includes('ثالث') || sData.grade.includes('3') ? 'ثالثة ثانوي' : 'ثانية باكالوريا';
+            setDoc(docSnap.ref, { grade: normalizedGrade, updatedAt: new Date().toISOString() }, { merge: true }).catch(() => {});
+            list.push({ ...sData, id: docSnap.id, grade: normalizedGrade });
+          } else {
+            list.push({ ...sData, id: docSnap.id });
+          }
         });
+
         // Sort by studentCode numeric or creation
         list.sort((a, b) => {
           const codeA = parseInt(a.studentCode.replace(/\D/g, ''), 10) || 0;
@@ -161,7 +194,7 @@ export default function App() {
     );
 
     return () => unsubStudents();
-  }, []);
+  }, [customGrades]);
 
   // 4. Real-time Listeners for Monthly Records
   useEffect(() => {
@@ -237,6 +270,25 @@ export default function App() {
     return true;
   };
 
+  // Add new grade/stage dynamically and sync to all devices
+  const handleAddNewGrade = async (gradeName: string) => {
+    const trimmed = gradeName.trim();
+    if (!trimmed || availableGrades.includes(trimmed)) return;
+    try {
+      const updated = Array.from(new Set([...customGrades, trimmed]));
+      const gradesDocRef = doc(db, 'system_settings', 'grades');
+      await setDoc(gradesDocRef, {
+        list: updated,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+      setCustomGrades(updated);
+      setSyncAlert(`✅ تم بنجاح إضافة الصف/المرحلة الجديدة (${trimmed}) ومزامنتها على جميع الأجهزة!`);
+      setTimeout(() => setSyncAlert(null), 5000);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'system_settings/grades');
+    }
+  };
+
   // Update Fee across all students, monthly records, and all devices in real-time
   const handleUpdateDefaultFee = async (newFee: number) => {
     try {
@@ -250,33 +302,48 @@ export default function App() {
       }, { merge: true });
       setDefaultFee(newFee);
 
-      // 2. Update monthlyFee on all students in Firestore
+      // 2. Update monthlyFee on all students in Firestore, preserving any custom discounts!
       const studentsSnap = await getDocs(collection(db, 'students'));
-      const studentUpdates = studentsSnap.docs.map((sDoc) =>
-        setDoc(sDoc.ref, {
-          monthlyFee: newFee,
+      const studentUpdates = studentsSnap.docs.map((sDoc) => {
+        const student = sDoc.data() as Student;
+        let studentFee = newFee;
+        if (student.hasDiscount || (student.discountAmount && student.discountAmount > 0) || student.isFullExemption) {
+          if (student.isFullExemption) {
+            studentFee = 0;
+          } else if (student.discountAmount && student.discountAmount > 0) {
+            studentFee = Math.max(0, newFee - student.discountAmount);
+          }
+        }
+        return setDoc(sDoc.ref, {
+          monthlyFee: studentFee,
           updatedAt: now,
-        }, { merge: true })
-      );
+        }, { merge: true });
+      });
       await Promise.all(studentUpdates);
 
-      // 3. Recalculate ALL monthly records in Firestore so:
-      // - requiredAmount = newFee
-      // - remainingAmount = Math.max(0, newFee - paidAmount)
-      // - status = paidAmount >= newFee ? 'paid' : (paidAmount > 0 ? 'partial' : 'unpaid')
+      // 3. Recalculate ALL monthly records in Firestore respecting individual discounts
       const recordsSnap = await getDocs(collection(db, 'monthly_records'));
       const recordUpdates = recordsSnap.docs.map((rDoc) => {
         const rec = rDoc.data() as MonthlyRecord;
+        const targetStudent = students.find((s) => s.id === rec.studentId);
+        let studentFee = newFee;
+        if (targetStudent?.hasDiscount || (targetStudent?.discountAmount && targetStudent.discountAmount > 0) || targetStudent?.isFullExemption) {
+          if (targetStudent.isFullExemption) {
+            studentFee = 0;
+          } else if (targetStudent.discountAmount && targetStudent.discountAmount > 0) {
+            studentFee = Math.max(0, newFee - targetStudent.discountAmount);
+          }
+        }
         const paid = rec.paidAmount || 0;
-        const newRemaining = Math.max(0, newFee - paid);
+        const newRemaining = Math.max(0, studentFee - paid);
         let status: 'paid' | 'partial' | 'unpaid' = 'unpaid';
-        if (paid >= newFee && newFee > 0) {
+        if ((paid >= studentFee && studentFee > 0) || (studentFee === 0 && paid === 0)) {
           status = 'paid';
         } else if (paid > 0) {
           status = 'partial';
         }
         return setDoc(rDoc.ref, {
-          requiredAmount: newFee,
+          requiredAmount: studentFee,
           remainingAmount: newRemaining,
           status,
           updatedAt: now,
@@ -284,12 +351,23 @@ export default function App() {
       });
       await Promise.all(recordUpdates);
 
-      setSyncAlert(`✅ تم تغيير السعر إلى ${newFee} ج.م، وتحديث المطلوب لجميع الطلاب (${studentsSnap.docs.length} طالب) وإعادة حساب المتبقي ومزامنته لحظياً على جميع الأجهزة!`);
+      setSyncAlert(`✅ تم تغيير السعر إلى ${newFee} ج.م، وتحديث المطلوب لجميع الطلاب مع الاحتفاظ بخصومات الطلاب المستحقين وإعادة حساب المتبقي ومزامنته للجميع!`);
       setTimeout(() => setSyncAlert(null), 6000);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'system_settings/pricing');
     }
   };
+
+  // Available groups collected dynamically from all students
+  const availableGroups = useMemo(() => {
+    const set = new Set<string>();
+    students.forEach((s) => {
+      if (s.groupName && s.groupName.trim()) {
+        set.add(s.groupName.trim());
+      }
+    });
+    return Array.from(set).sort();
+  }, [students]);
 
   // Calculate Next Suggested Student Code
   const suggestedStudentCode = useMemo(() => {
@@ -500,6 +578,8 @@ export default function App() {
         date: now,
         parentPhone: targetStudent?.parentPhone || '',
         studentPhone: targetStudent?.phone || '',
+        discountAmount: targetStudent?.discountAmount || 0,
+        discountReason: targetStudent?.discountReason || '',
       });
       setIsReceiptModalOpen(true);
 
@@ -724,6 +804,8 @@ export default function App() {
       studentPhone: targetStudent?.phone || '',
       isRefund,
       refundReason: trans.refundReason,
+      discountAmount: targetStudent?.discountAmount || 0,
+      discountReason: targetStudent?.discountReason || '',
     });
     setIsReceiptModalOpen(true);
   };
@@ -792,6 +874,7 @@ export default function App() {
             onAddNewStudent={handleOpenAddNew}
             onExportExcel={handleExportExcel}
             teacherName={teacherName}
+            availableGrades={availableGrades}
           />
         )}
 
@@ -856,6 +939,9 @@ export default function App() {
         initialStudent={studentToEdit}
         suggestedCode={suggestedStudentCode}
         defaultFee={defaultFee}
+        availableGrades={availableGrades}
+        onAddNewGrade={handleAddNewGrade}
+        availableGroups={availableGroups}
       />
 
       {isPaymentModalOpen && studentForPayment && (

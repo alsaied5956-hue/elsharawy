@@ -8,6 +8,10 @@ export interface Student {
   grade: string;
   groupName: string;
   monthlyFee: number;
+  hasDiscount?: boolean;
+  discountAmount?: number;
+  discountReason?: string;
+  isFullExemption?: boolean;
   notes?: string;
   status: 'active' | 'inactive';
   joinedDate: string;
@@ -27,6 +31,9 @@ export interface MonthlyRecord {
   requiredAmount: number;
   paidAmount: number;
   remainingAmount: number;
+  hasDiscount?: boolean;
+  discountAmount?: number;
+  discountReason?: string;
   status: PaymentStatus;
   lastPaymentDate?: string;
   receiptNumber?: string;

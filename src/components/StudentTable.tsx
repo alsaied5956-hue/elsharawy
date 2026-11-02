@@ -14,7 +14,8 @@ import {
   ChevronRight,
   UserPlus,
   FileSpreadsheet,
-  Users
+  Users,
+  Tag
 } from 'lucide-react';
 import { Student, MonthlyRecord, PaymentStatus } from '../types';
 import { formatCurrency, GRADES_LIST, createWhatsAppLink } from '../utils/helpers';
@@ -30,6 +31,7 @@ interface Props {
   onAddNewStudent: () => void;
   onExportExcel: () => void;
   teacherName: string;
+  availableGrades?: string[];
 }
 
 export const StudentTable: React.FC<Props> = ({
@@ -43,12 +45,26 @@ export const StudentTable: React.FC<Props> = ({
   onAddNewStudent,
   onExportExcel,
   teacherName,
+  availableGrades = GRADES_LIST,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGrade, setSelectedGrade] = useState('ALL');
+  const [selectedGroup, setSelectedGroup] = useState('ALL');
   const [selectedStatus, setSelectedStatus] = useState<'ALL' | 'paid' | 'partial' | 'unpaid'>('ALL');
+  const [discountOnly, setDiscountOnly] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+
+  // Collect all unique group names dynamically
+  const availableGroups = useMemo(() => {
+    const set = new Set<string>();
+    students.forEach((s) => {
+      if (s.groupName && s.groupName.trim()) {
+        set.add(s.groupName.trim());
+      }
+    });
+    return Array.from(set).sort();
+  }, [students]);
 
   // Filter logic
   const filteredStudents = useMemo(() => {
@@ -71,6 +87,17 @@ export const StudentTable: React.FC<Props> = ({
         return false;
       }
 
+      // Group match
+      if (selectedGroup !== 'ALL' && s.groupName !== selectedGroup) {
+        return false;
+      }
+
+      // Discount filter
+      if (discountOnly) {
+        const isDisc = s.hasDiscount || (s.discountAmount && s.discountAmount > 0) || s.isFullExemption;
+        if (!isDisc) return false;
+      }
+
       // Status match for current month
       if (selectedStatus !== 'ALL') {
         const rec = monthlyRecords[`${s.id}_${currentMonthKey}`];
@@ -80,6 +107,8 @@ export const StudentTable: React.FC<Props> = ({
         let status: PaymentStatus = 'unpaid';
         if (paid >= req && req > 0) {
           status = 'paid';
+        } else if (req === 0) {
+          status = 'paid'; // exempt students
         } else if (paid > 0) {
           status = 'partial';
         }
@@ -91,7 +120,7 @@ export const StudentTable: React.FC<Props> = ({
 
       return true;
     });
-  }, [students, monthlyRecords, currentMonthKey, searchQuery, selectedGrade, selectedStatus]);
+  }, [students, monthlyRecords, currentMonthKey, searchQuery, selectedGrade, selectedGroup, discountOnly, selectedStatus]);
 
   // Pagination calculation
   const totalPages = Math.max(1, Math.ceil(filteredStudents.length / pageSize));
@@ -106,6 +135,8 @@ export const StudentTable: React.FC<Props> = ({
       setCurrentPage(newPage);
     }
   };
+
+  const discountedCount = students.filter(s => s.hasDiscount || (s.discountAmount && s.discountAmount > 0) || s.isFullExemption).length;
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden flex flex-col">
@@ -160,11 +191,43 @@ export const StudentTable: React.FC<Props> = ({
               }}
               className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700"
             >
-              <option value="ALL">جميع الصفوف الدراسية</option>
-              {GRADES_LIST.map((g) => (
+              <option value="ALL">جميع الصفوف ({availableGrades.length})</option>
+              {availableGrades.map((g) => (
                 <option key={g} value={g}>{g}</option>
               ))}
             </select>
+
+            {/* Group Filter */}
+            <select
+              value={selectedGroup}
+              onChange={(e) => {
+                setSelectedGroup(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700"
+            >
+              <option value="ALL">جميع المجموعات ({availableGroups.length})</option>
+              {availableGroups.map((grp) => (
+                <option key={grp} value={grp}>{grp}</option>
+              ))}
+            </select>
+
+            {/* Discount Filter Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setDiscountOnly(!discountOnly);
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border ${
+                discountOnly
+                  ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                  : 'bg-white text-amber-900 border-amber-300 hover:bg-amber-50'
+              }`}
+            >
+              <Tag className="w-3.5 h-3.5" />
+              <span>طلاب الخصم ({discountedCount})</span>
+            </button>
 
             {/* Payment Status Filter */}
             <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs font-semibold">
@@ -222,23 +285,23 @@ export const StudentTable: React.FC<Props> = ({
             {paginatedStudents.length === 0 ? (
               <tr>
                 <td colSpan={9} className="py-12 text-center text-slate-400">
-                  <div className="max-w-sm mx-auto space-y-2">
-                    <p className="font-semibold text-slate-600 text-sm">لا يوجد طلاب يطابقون خيارات البحث الحالية</p>
-                    <p className="text-xs">جرب تغيير كلمات البحث أو الفلاتر، أو قم بإضافة طالب جديد.</p>
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    <Users className="w-8 h-8 text-slate-300" />
+                    <p className="font-semibold text-slate-600 text-sm">لا توجد نتائج مطابقة لبحثك</p>
+                    <p className="text-xs text-slate-400">جرب تغيير كلمات البحث أو الفلاتر بالأعلى</p>
                   </div>
                 </td>
               </tr>
             ) : (
               paginatedStudents.map((student) => {
-                const recKey = `${student.id}_${currentMonthKey}`;
-                const record = monthlyRecords[recKey];
+                const record = monthlyRecords[`${student.id}_${currentMonthKey}`];
                 const required = record?.requiredAmount ?? student.monthlyFee;
                 const paid = record?.paidAmount ?? 0;
                 const remaining = record?.remainingAmount ?? Math.max(0, required - paid);
-
-                const isPaidFull = paid >= required && required > 0;
+                
+                const isPaidFull = (paid >= required && required > 0) || (required === 0 && paid === 0);
                 const isPartial = paid > 0 && remaining > 0;
-                const isUnpaid = paid === 0;
+                const isUnpaid = paid === 0 && required > 0;
 
                 const parentWhatsAppUrl = createWhatsAppLink(
                   student.parentPhone,
@@ -247,7 +310,9 @@ export const StudentTable: React.FC<Props> = ({
                   paid,
                   remaining,
                   record?.receiptNumber || 'لم يستخرج بعد',
-                  teacherName
+                  teacherName,
+                  student.discountAmount || record?.discountAmount,
+                  student.discountReason || record?.discountReason
                 );
 
                 return (
@@ -271,7 +336,7 @@ export const StudentTable: React.FC<Props> = ({
                     {/* Grade & Group */}
                     <td className="py-3 px-3">
                       <div className="font-medium text-slate-800 text-xs">{student.grade}</div>
-                      <div className="text-[11px] text-slate-500">{student.groupName || 'بدون مجموعة'}</div>
+                      <div className="text-[11px] text-slate-500 font-semibold">{student.groupName || 'بدون مجموعة'}</div>
                     </td>
 
                     {/* Phones */}
@@ -299,9 +364,20 @@ export const StudentTable: React.FC<Props> = ({
                       </div>
                     </td>
 
-                    {/* Required Fee */}
+                    {/* Required Fee with Discount Badge */}
                     <td className="py-3 px-3 text-center font-bold text-slate-700">
-                      {formatCurrency(required)}
+                      <div>{formatCurrency(required)}</div>
+                      {(student.hasDiscount || (student.discountAmount && student.discountAmount > 0) || student.isFullExemption) && (
+                        <div className="mt-1">
+                          <span 
+                            className="inline-flex items-center gap-0.5 bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                            title={student.discountReason || 'مطبق عليه خصم خاص'}
+                          >
+                            <Tag className="w-2.5 h-2.5 text-amber-600" />
+                            {student.isFullExemption ? 'إعفاء مجاني' : `خصم ${student.discountAmount} ج.م`}
+                          </span>
+                        </div>
+                      )}
                     </td>
 
                     {/* Paid */}
@@ -342,24 +418,19 @@ export const StudentTable: React.FC<Props> = ({
 
                     {/* Actions */}
                     <td className="py-3 px-4 text-center">
-                      <div className="inline-flex items-center gap-1.5">
+                      <div className="flex items-center justify-center gap-1.5">
                         <button
                           onClick={() => onOpenPayment(student)}
-                          className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1 shadow-xs transition ${
-                            isPaidFull 
-                              ? 'bg-slate-100 hover:bg-slate-200 text-slate-700' 
-                              : isPartial 
-                                ? 'bg-amber-600 hover:bg-amber-700 text-white' 
-                                : 'bg-emerald-700 hover:bg-emerald-800 text-white'
-                          }`}
+                          className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold text-xs flex items-center gap-1 shadow-xs transition"
+                          title="تسجيل سداد لهذا الشهر"
                         >
                           <CreditCard className="w-3.5 h-3.5" />
-                          {isPaidFull ? 'سداد / استرجاع ↩️' : isPartial ? 'سداد المتبقي' : 'سداد المصاريف'}
+                          <span>سداد</span>
                         </button>
 
                         <button
                           onClick={() => onEditStudent(student)}
-                          className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+                          className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
                           title="تعديل بيانات الطالب"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
@@ -367,8 +438,8 @@ export const StudentTable: React.FC<Props> = ({
 
                         <button
                           onClick={() => onDeleteStudent(student.id, student.name)}
-                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
-                          title="حذف الطالب من المنظومة"
+                          className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition"
+                          title="حذف الطالب"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -385,42 +456,64 @@ export const StudentTable: React.FC<Props> = ({
       {/* Pagination Footer */}
       <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
         <div className="flex items-center gap-2">
-          <span>عدد الصفوف في الصفحة:</span>
+          <span>الطلاب في كل صفحة:</span>
           <select
             value={pageSize}
             onChange={(e) => {
               setPageSize(Number(e.target.value));
               setCurrentPage(1);
             }}
-            className="px-2 py-1 bg-white border border-slate-200 rounded-md font-medium"
+            className="px-2 py-1 bg-white border border-slate-200 rounded-md text-xs font-semibold"
           >
             <option value={10}>10</option>
             <option value={20}>20</option>
             <option value={50}>50</option>
             <option value={100}>100</option>
           </select>
+          <span className="text-slate-400">|</span>
+          <span>صفحة {currentPage} من {totalPages}</span>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span>صفحة {currentPage} من {totalPages}</span>
-          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5">
-            <button
-              onClick={() => handlePageChange(currentPage - 1)}
-              disabled={currentPage <= 1}
-              className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => handlePageChange(currentPage + 1)}
-              disabled={currentPage >= totalPages}
-              className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-          </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage === 1}
+            className="p-1.5 border border-slate-200 rounded-lg hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+          
+          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+            let pageNum = i + 1;
+            if (totalPages > 5 && currentPage > 3) {
+              pageNum = currentPage - 3 + i;
+              if (pageNum > totalPages) pageNum = totalPages - (4 - i);
+            }
+            return (
+              <button
+                key={pageNum}
+                onClick={() => handlePageChange(pageNum)}
+                className={`w-7 h-7 rounded-lg font-bold text-xs transition ${
+                  currentPage === pageNum
+                    ? 'bg-emerald-700 text-white'
+                    : 'hover:bg-white text-slate-700 border border-slate-200'
+                }`}
+              >
+                {pageNum}
+              </button>
+            );
+          })}
+
+          <button
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className="p-1.5 border border-slate-200 rounded-lg hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
         </div>
       </div>
+
     </div>
   );
 };

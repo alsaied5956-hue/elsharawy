@@ -87,7 +87,9 @@ export function createWhatsAppLink(
   paidAmount: number,
   remainingAmount: number,
   receiptNumber: string,
-  teacherName: string = 'مستر أحمد الشعراوي'
+  teacherName: string = 'مستر أحمد الشعراوي',
+  discountAmount?: number,
+  discountReason?: string
 ): string {
   const cleanPhone = cleanPhoneNumber(phone);
   let statusText = '';
@@ -97,10 +99,14 @@ export function createWhatsAppLink(
     statusText = `📌 تفاصيل سداد مصروفات شهر (${monthLabel}):\n- المبلغ المسدد: ${paidAmount} ج.م\n- المبلغ المتبقي: ${remainingAmount} ج.م\nرقم الإيصال: ${receiptNumber}\nيرجى استكمال باقي المصروفات في الحصة القادمة.`;
   }
 
+  const discountText = discountAmount && discountAmount > 0
+    ? `\n🏷️ تم تطبيق خصم خاص: ${discountAmount} ج.م${discountReason ? ` (${discountReason})` : ''}`
+    : '';
+
   const message = `السلام عليكم ورحمة الله وبركاته 🌹
 تحياتنا لسيادتكم من مكتب ${teacherName}.
 
-بخصوص الطالب / الطالبة: ${studentName}
+بخصوص الطالب / الطالبة: ${studentName}${discountText}
 
 ${statusText}
 
@@ -161,6 +167,8 @@ export function exportToExcel(students: Student[], monthlyRecords: Record<string
       'رقم هاتف الطالب': s.phone,
       'رقم ولي الأمر': s.parentPhone,
       'المصروفات المطلوبة': req,
+      'الخصم المطبق (ج.م)': s.discountAmount || rec?.discountAmount || 0,
+      'سبب الخصم': s.discountReason || rec?.discountReason || '-',
       'المسدد': paid,
       'المتبقي': rem,
       'حالة السداد للشهر': statusAr,

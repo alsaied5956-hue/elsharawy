@@ -175,16 +175,25 @@ export const StudentTable: React.FC<Props> = ({
               <span>إضافة طالب</span>
             </button>
 
-            {/* Print Buttons for Paid and Unpaid Students */}
+            {/* Print Buttons for Paid, Unpaid, and All in same PDF */}
             {onOpenPrintReport && (
               <>
+                <button
+                  onClick={() => onOpenPrintReport('all')}
+                  className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-xs transition"
+                  title="طباعة كشف شامل: المسددين لوحدهم وغير المسددين لوحدهم في نفس الـ PDF"
+                >
+                  <Printer className="w-4 h-4 text-emerald-400" />
+                  <span>طباعة الكل (PDF)</span>
+                </button>
+
                 <button
                   onClick={() => onOpenPrintReport('paid')}
                   className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-xs transition"
                   title="طباعة كشف الطلاب الذين سددوا فقط بصيغة PDF"
                 >
-                  <Printer className="w-4 h-4 text-emerald-600" />
-                  <span>طباعة المسددين (PDF)</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  <span>المسددين فقط</span>
                 </button>
 
                 <button
@@ -192,8 +201,8 @@ export const StudentTable: React.FC<Props> = ({
                   className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-800 border border-red-300 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-xs transition"
                   title="طباعة كشف الطلاب الذين لم يسددوا والمتبقي عليهم بصيغة PDF"
                 >
-                  <Printer className="w-4 h-4 text-red-600" />
-                  <span>طباعة غير المسددين (PDF)</span>
+                  <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                  <span>غير المسددين فقط</span>
                 </button>
               </>
             )}

@@ -36,6 +36,7 @@ import { FeasibilityStudyModal } from './components/FeasibilityStudyModal';
 import { LoginScreen } from './components/LoginScreen';
 import { ResetSystemModal } from './components/ResetSystemModal';
 import { RefundModal } from './components/RefundModal';
+import { PrintReportModal } from './components/PrintReportModal';
 
 export default function App() {
   const teacherName = 'مستر أحمد الشعراوي';
@@ -86,6 +87,15 @@ export default function App() {
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
   const [transactionToRefund, setTransactionToRefund] = useState<PaymentTransaction | null>(null);
   const [syncAlert, setSyncAlert] = useState<string | null>(null);
+
+  // Print PDF report modal state
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [printReportMode, setPrintReportMode] = useState<'paid' | 'unpaid' | 'all'>('paid');
+
+  const handleOpenPrintReport = (mode: 'paid' | 'unpaid' | 'all') => {
+    setPrintReportMode(mode);
+    setIsPrintModalOpen(true);
+  };
 
   // Handle device name update
   const handleUpdateDeviceName = (name: string) => {
@@ -922,6 +932,7 @@ export default function App() {
           totalRemaining={currentMonthStats.totalRemaining}
           todayCollected={currentMonthStats.todayCollected}
           monthLabel={currentMonthLabel}
+          onOpenPrintReport={handleOpenPrintReport}
         />
 
         {/* Tab 1: Students & Monthly Ledger */}
@@ -937,6 +948,7 @@ export default function App() {
             onAddNewStudent={handleOpenAddNew}
             onExportExcel={handleExportExcel}
             onBulkImportExcel={handleBulkImportExcelFile}
+            onOpenPrintReport={handleOpenPrintReport}
             teacherName={teacherName}
             availableGrades={availableGrades}
           />
@@ -1053,6 +1065,19 @@ export default function App() {
       <FeasibilityStudyModal
         isOpen={isStudyModalOpen}
         onClose={() => setIsStudyModalOpen(false)}
+      />
+
+      <PrintReportModal
+        isOpen={isPrintModalOpen}
+        onClose={() => setIsPrintModalOpen(false)}
+        initialMode={printReportMode}
+        students={students}
+        monthlyRecords={monthlyRecords}
+        currentMonthKey={currentMonthKey}
+        monthLabel={currentMonthLabel}
+        teacherName={teacherName}
+        availableGrades={availableGrades}
+        currentDeviceName={currentDeviceName}
       />
     </div>
   );

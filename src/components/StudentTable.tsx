@@ -16,7 +16,8 @@ import {
   FileSpreadsheet,
   Users,
   Tag,
-  Upload
+  Upload,
+  Printer
 } from 'lucide-react';
 import { Student, MonthlyRecord, PaymentStatus } from '../types';
 import { formatCurrency, GRADES_LIST, createWhatsAppLink } from '../utils/helpers';
@@ -32,6 +33,7 @@ interface Props {
   onAddNewStudent: () => void;
   onExportExcel: () => void;
   onBulkImportExcel?: (file: File) => Promise<void>;
+  onOpenPrintReport?: (mode: 'paid' | 'unpaid' | 'all') => void;
   teacherName: string;
   availableGrades?: string[];
 }
@@ -47,6 +49,7 @@ export const StudentTable: React.FC<Props> = ({
   onAddNewStudent,
   onExportExcel,
   onBulkImportExcel,
+  onOpenPrintReport,
   teacherName,
   availableGrades = GRADES_LIST,
 }) => {
@@ -163,29 +166,54 @@ export const StudentTable: React.FC<Props> = ({
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={onAddNewStudent}
-              className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-xs transition"
+              className="px-3 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-xs transition"
             >
               <UserPlus className="w-4 h-4" />
               <span>إضافة طالب</span>
             </button>
+
+            {/* Print Buttons for Paid and Unpaid Students */}
+            {onOpenPrintReport && (
+              <>
+                <button
+                  onClick={() => onOpenPrintReport('paid')}
+                  className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-xs transition"
+                  title="طباعة كشف الطلاب الذين سددوا فقط بصيغة PDF"
+                >
+                  <Printer className="w-4 h-4 text-emerald-600" />
+                  <span>طباعة المسددين (PDF)</span>
+                </button>
+
+                <button
+                  onClick={() => onOpenPrintReport('unpaid')}
+                  className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-800 border border-red-300 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-xs transition"
+                  title="طباعة كشف الطلاب الذين لم يسددوا والمتبقي عليهم بصيغة PDF"
+                >
+                  <Printer className="w-4 h-4 text-red-600" />
+                  <span>طباعة غير المسددين (PDF)</span>
+                </button>
+              </>
+            )}
+
             <button
               onClick={onExportExcel}
               className="px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl font-medium text-xs sm:text-sm flex items-center gap-1.5 shadow-xs transition"
               title="تصدير شيت إكسيل لهذا الشهر"
             >
               <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-              <span className="hidden md:inline">تصدير إكسيل</span>
+              <span className="hidden lg:inline">تصدير إكسيل</span>
             </button>
+
             {onBulkImportExcel && (
               <label 
                 className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl font-medium text-xs sm:text-sm flex items-center gap-1.5 shadow-xs transition cursor-pointer"
                 title="استيراد شيت إكسيل الطلاب بدون تضارب"
               >
                 <Upload className="w-4 h-4 text-slate-600" />
-                <span className="hidden md:inline">استيراد إكسيل</span>
+                <span className="hidden lg:inline">استيراد إكسيل</span>
                 <input
                   type="file"
                   accept=".xlsx, .xls"

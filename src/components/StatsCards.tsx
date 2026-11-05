@@ -1,5 +1,5 @@
 import React from 'react';
-import { Users, DollarSign, AlertCircle, CheckCircle2, TrendingUp, Calendar } from 'lucide-react';
+import { Users, DollarSign, AlertCircle, CheckCircle2, TrendingUp, Calendar, Printer } from 'lucide-react';
 import { formatCurrency } from '../utils/helpers';
 
 interface Props {
@@ -10,6 +10,7 @@ interface Props {
   totalRemaining: number;
   todayCollected: number;
   monthLabel: string;
+  onOpenPrintReport?: (mode: 'paid' | 'unpaid' | 'all') => void;
 }
 
 export const StatsCards: React.FC<Props> = ({
@@ -20,6 +21,7 @@ export const StatsCards: React.FC<Props> = ({
   totalRemaining,
   todayCollected,
   monthLabel,
+  onOpenPrintReport,
 }) => {
   const collectionPercentage = totalRequired > 0 
     ? Math.min(100, Math.round((totalCollected / totalRequired) * 100))
@@ -61,8 +63,19 @@ export const StatsCards: React.FC<Props> = ({
       <div className="bg-white p-3.5 rounded-2xl border border-emerald-100 shadow-xs bg-gradient-to-b from-white to-emerald-50/30 flex flex-col justify-between">
         <div className="flex items-center justify-between">
           <span className="text-xs text-emerald-700 font-bold">المحصل بالخزينة</span>
-          <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
-            <CheckCircle2 className="w-4 h-4" />
+          <div className="flex items-center gap-1">
+            {onOpenPrintReport && (
+              <button
+                onClick={() => onOpenPrintReport('paid')}
+                className="p-1 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-100 rounded-md transition"
+                title="طباعة كشف المسددين كـ PDF"
+              >
+                <Printer className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+              <CheckCircle2 className="w-4 h-4" />
+            </div>
           </div>
         </div>
         <div className="mt-2">
@@ -75,8 +88,19 @@ export const StatsCards: React.FC<Props> = ({
       <div className="bg-white p-3.5 rounded-2xl border border-amber-100 shadow-xs bg-gradient-to-b from-white to-amber-50/30 flex flex-col justify-between">
         <div className="flex items-center justify-between">
           <span className="text-xs text-amber-800 font-bold">المتبقي في الذمة</span>
-          <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
-            <AlertCircle className="w-4 h-4" />
+          <div className="flex items-center gap-1">
+            {onOpenPrintReport && (
+              <button
+                onClick={() => onOpenPrintReport('unpaid')}
+                className="p-1 text-amber-600 hover:text-amber-800 hover:bg-amber-100 rounded-md transition"
+                title="طباعة كشف غير المسددين كـ PDF"
+              >
+                <Printer className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
+              <AlertCircle className="w-4 h-4" />
+            </div>
           </div>
         </div>
         <div className="mt-2">

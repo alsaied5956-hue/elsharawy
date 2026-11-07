@@ -49,17 +49,83 @@ export function formatCurrency(amount: number, currency: string = 'ج.م'): stri
   return `${(amount || 0).toLocaleString('ar-EG')} ${currency}`;
 }
 
+export function getArabicDayName(isoString?: string): string {
+  if (!isoString) return '-';
+  try {
+    const d = new Date(isoString);
+    const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+    return days[d.getDay()] || '-';
+  } catch {
+    return '-';
+  }
+}
+
+export function formatArabicDateOnly(isoString?: string): string {
+  if (!isoString) return '-';
+  try {
+    const d = new Date(isoString);
+    return d.toLocaleDateString('ar-EG', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+  } catch {
+    return isoString;
+  }
+}
+
+export function formatArabicTimeOnly(isoString?: string): string {
+  if (!isoString) return '-';
+  try {
+    const d = new Date(isoString);
+    return d.toLocaleTimeString('ar-EG', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    return isoString;
+  }
+}
+
+export function formatFullAuditDateTime(isoString?: string): string {
+  if (!isoString) return '-';
+  try {
+    const d = new Date(isoString);
+    const day = getArabicDayName(isoString);
+    const date = d.toLocaleDateString('ar-EG', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+    const time = d.toLocaleTimeString('ar-EG', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+    return `${day} ${date} (الساعة ${time})`;
+  } catch {
+    return isoString;
+  }
+}
+
 export function formatDateTime(isoString?: string): string {
   if (!isoString) return '-';
   try {
     const d = new Date(isoString);
-    return d.toLocaleString('ar-EG', {
+    const day = getArabicDayName(isoString);
+    const date = d.toLocaleDateString('ar-EG', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
+    });
+    const time = d.toLocaleTimeString('ar-EG', {
       hour: '2-digit',
       minute: '2-digit',
+      hour12: true,
     });
+    return `${day} ${date} - ${time}`;
   } catch {
     return isoString;
   }

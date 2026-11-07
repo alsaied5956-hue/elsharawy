@@ -10,9 +10,11 @@ import {
   Smartphone,
   ChevronDown,
   LogOut,
-  ShieldAlert
+  ShieldAlert,
+  Crown,
+  UserCheck
 } from 'lucide-react';
-import { MonthOption } from '../types';
+import { MonthOption, SystemUser } from '../types';
 
 interface Props {
   teacherName: string;
@@ -22,6 +24,7 @@ interface Props {
   currentMonthKey: string;
   setCurrentMonthKey: (key: string) => void;
   currentDeviceName: string;
+  currentUser: SystemUser | null;
   onOpenStudyModal: () => void;
   onOpenResetModal: () => void;
   onLogout: () => void;
@@ -36,11 +39,14 @@ export const Navbar: React.FC<Props> = ({
   currentMonthKey,
   setCurrentMonthKey,
   currentDeviceName,
+  currentUser,
   onOpenStudyModal,
   onOpenResetModal,
   onLogout,
   isConnected,
 }) => {
+  const isAdmin = currentUser?.role === 'admin';
+
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
       {/* Top Banner Bar */}
@@ -55,11 +61,31 @@ export const Navbar: React.FC<Props> = ({
           </span>
         </div>
 
-        <div className="flex items-center gap-2 text-slate-300">
-          <Smartphone className="w-3.5 h-3.5 text-slate-400" />
-          <span className="font-medium truncate max-w-[180px]">
-            {currentDeviceName || 'الهاتف الرئيسي'}
-          </span>
+        <div className="flex items-center gap-3 text-slate-300">
+          {currentUser && (
+            <div className="flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-0.5 rounded-full border border-slate-700">
+              {isAdmin ? (
+                <Crown className="w-3.5 h-3.5 text-amber-400" />
+              ) : (
+                <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+              )}
+              <span className="font-bold text-white text-[11px]">
+                {currentUser.name}
+              </span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold ${
+                isAdmin ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-300'
+              }`}>
+                {isAdmin ? 'المالك الرئيسي' : 'مساعد تحصيل'}
+              </span>
+            </div>
+          )}
+
+          <div className="hidden sm:flex items-center gap-1.5 text-slate-400">
+            <Smartphone className="w-3.5 h-3.5" />
+            <span className="truncate max-w-[140px]">
+              {currentDeviceName || 'الهاتف'}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -82,7 +108,7 @@ export const Navbar: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* Feasibility Study Button (Mobile & Desktop) */}
+          {/* Feasibility Study Button (Mobile) */}
           <button
             onClick={onOpenStudyModal}
             className="md:hidden inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition"
@@ -124,7 +150,7 @@ export const Navbar: React.FC<Props> = ({
               }`}
             >
               <Users className="w-3.5 h-3.5" />
-              <span>الطلاب والمصروفات</span>
+              <span>الطلاب والتحصيل</span>
             </button>
 
             <button
@@ -148,19 +174,21 @@ export const Navbar: React.FC<Props> = ({
               }`}
             >
               <Settings className="w-3.5 h-3.5" />
-              <span>الإعدادات</span>
+              <span>الإعدادات والحسابات</span>
             </button>
           </div>
 
-          {/* Reset Accounts Button (Red) */}
-          <button
-            onClick={onOpenResetModal}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-xl text-xs font-bold transition shadow-xs"
-            title="تقفيل الحسابات وتصفير الطلاب لسنة جديدة"
-          >
-            <ShieldAlert className="w-3.5 h-3.5 text-red-600" />
-            <span className="hidden sm:inline">تقفيل الحسابات</span>
-          </button>
+          {/* Reset Accounts Button (Red) - Visible ONLY for Admin */}
+          {isAdmin && (
+            <button
+              onClick={onOpenResetModal}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-xl text-xs font-bold transition shadow-xs"
+              title="تقفيل الحسابات وتصفير الطلاب لسنة جديدة (صلاحية المالك فقط)"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-red-600" />
+              <span className="hidden sm:inline">تقفيل الحسابات</span>
+            </button>
+          )}
 
           {/* Desktop Study Button */}
           <button
@@ -171,13 +199,14 @@ export const Navbar: React.FC<Props> = ({
             <span>دراسة الاعتمادية 100%</span>
           </button>
 
-          {/* Logout / Lock Button */}
+          {/* Logout / Switch Profile Button */}
           <button
             onClick={onLogout}
-            className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-slate-100 rounded-xl transition"
-            title="تسجيل الخروج وقفل الشاشة"
+            className="px-2.5 py-1.5 text-slate-600 hover:text-red-700 hover:bg-red-50 border border-slate-200 rounded-xl transition flex items-center gap-1.5 text-xs font-bold"
+            title="تسجيل الخروج أو تبديل الحساب"
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="w-3.5 h-3.5 text-red-600" />
+            <span className="hidden sm:inline">تبديل الحساب</span>
           </button>
 
         </div>

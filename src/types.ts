@@ -42,6 +42,22 @@ export interface MonthlyRecord {
   updatedAt?: string;
 }
 
+export type UserRole = 'admin' | 'assistant';
+
+export interface SystemUser {
+  id: string;
+  name: string; // e.g. "مستر أحمد الشعراوي" or "أحمد إبراهيم"
+  username: string; // unique login username
+  password: string; // password
+  role: UserRole; // 'admin' = المالك الرئيسي, 'assistant' = مساعد تحصيل فقط
+  phone?: string;
+  status: 'active' | 'disabled';
+  notes?: string;
+  createdAt: string;
+  createdBy?: string;
+  updatedAt: string;
+}
+
 export interface PaymentTransaction {
   id: string;
   studentId: string;
@@ -51,6 +67,11 @@ export interface PaymentTransaction {
   amount: number;
   receiptNumber: string;
   recordedBy: string;
+  recordedByUserId?: string;
+  recordedByRole?: UserRole;
+  paymentDayName?: string;
+  formattedDate?: string;
+  formattedTime?: string;
   note?: string;
   paymentDate: string;
   createdAt: string;
@@ -60,6 +81,7 @@ export interface PaymentTransaction {
   refundReason?: string;
   refundDate?: string;
   refundedBy?: string;
+  refundedByUserId?: string;
   originalTransactionId?: string;
   originalReceiptNumber?: string;
 }

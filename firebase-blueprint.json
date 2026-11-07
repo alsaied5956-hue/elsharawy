@@ -70,6 +70,24 @@
         "updatedAt": { "type": "string", "maxLength": 50 }
       },
       "required": ["teacherName", "defaultMonthlyFee"]
+    },
+    "SystemUser": {
+      "title": "SystemUser",
+      "description": "System operator profiles and assistants with roles and access credentials",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "username": { "type": "string", "maxLength": 60 },
+        "password": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "enum": ["admin", "assistant"] },
+        "phone": { "type": "string", "maxLength": 30 },
+        "status": { "type": "string", "enum": ["active", "disabled"] },
+        "notes": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "createdBy": { "type": "string", "maxLength": 100 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["name", "username", "password", "role", "status"]
     }
   },
   "firestore": {
@@ -88,6 +106,10 @@
     "/system_settings/{settingId}": {
       "schema": "SystemSetting",
       "description": "Application configurations and defaults"
+    },
+    "/system_users/{userId}": {
+      "schema": "SystemUser",
+      "description": "Admin and assistant accounts"
     }
   }
 }

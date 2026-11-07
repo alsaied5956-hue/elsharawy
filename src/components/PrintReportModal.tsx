@@ -9,10 +9,22 @@ import {
   Phone, 
   FileText,
   DollarSign,
-  Download
+  Download,
+  Calendar,
+  Clock,
+  UserCheck,
+  ShieldCheck,
+  CalendarDays,
+  Layers
 } from 'lucide-react';
-import { Student, MonthlyRecord } from '../types';
-import { formatCurrency, formatDateTime } from '../utils/helpers';
+import { Student, MonthlyRecord, PaymentTransaction } from '../types';
+import { 
+  formatCurrency, 
+  formatDateTime, 
+  getArabicDayName, 
+  formatArabicDateOnly, 
+  formatArabicTimeOnly 
+} from '../utils/helpers';
 
 interface Props {
   isOpen: boolean;
@@ -20,6 +32,7 @@ interface Props {
   initialMode?: 'paid' | 'unpaid' | 'all';
   students: Student[];
   monthlyRecords: Record<string, MonthlyRecord>;
+  transactions?: PaymentTransaction[];
   currentMonthKey: string;
   monthLabel: string;
   teacherName: string;
@@ -33,6 +46,7 @@ export const PrintReportModal: React.FC<Props> = ({
   initialMode = 'all',
   students,
   monthlyRecords,
+  transactions = [],
   currentMonthKey,
   monthLabel,
   teacherName,
@@ -42,6 +56,8 @@ export const PrintReportModal: React.FC<Props> = ({
   const [reportType, setReportType] = useState<'paid' | 'unpaid' | 'all'>(initialMode);
   const [selectedGrade, setSelectedGrade] = useState<string>('ALL');
   const [selectedGroup, setSelectedGroup] = useState<string>('ALL');
+  // View mode: 'daily' (سبت، حد، اتنين... يوم بيوم) vs 'students' (كشف مجمع لكل طالب)
+  const [viewMode, setViewMode] = useState<'daily' | 'students'>('daily');
 
   // Groups list
   const availableGroups = useMemo(() => {
@@ -52,7 +68,44 @@ export const PrintReportModal: React.FC<Props> = ({
     return Array.from(set).sort();
   }, [students]);
 
-  // Compute student record status
+  // Students fast lookup map
+  const studentsMap = useMemo(() => {
+    const map = new Map<string, Student>();
+    students.forEach((s) => {
+      map.set(s.id, s);
+    });
+    return map;
+  }, [students]);
+
+  // Map student transactions for current month
+  const studentTransactionsMap = useMemo(() => {
+    const map = new Map<string, PaymentTransaction[]>();
+    transactions.forEach((t) => {
+      if (t.monthKey === currentMonthKey && t.type !== 'refund') {
+        const list = map.get(t.studentId) || [];
+        list.push(t);
+        map.set(t.studentId, list);
+      }
+    });
+    return map;
+  }, [transactions, currentMonthKey]);
+
+  // Assistant collection summary for current month
+  const assistantSummary = useMemo(() => {
+    const summary = new Map<string, { name: string; count: number; total: number }>();
+    transactions.forEach((t) => {
+      if (t.monthKey === currentMonthKey && t.type !== 'refund') {
+        const key = t.recordedBy || 'المسؤول الرئيسي';
+        const current = summary.get(key) || { name: key, count: 0, total: 0 };
+        current.count += 1;
+        current.total += t.amount || 0;
+        summary.set(key, current);
+      }
+    });
+    return Array.from(summary.values()).sort((a, b) => b.total - a.total);
+  }, [transactions, currentMonthKey]);
+
+  // Compute student record status with exact transaction audit data
   const studentsWithStatus = useMemo(() => {
     return students.map((s) => {
       const recKey = `${s.id}_${currentMonthKey}`;
@@ -70,6 +123,18 @@ export const PrintReportModal: React.FC<Props> = ({
         status = 'partial';
       }
 
+      // Lookup student payments in current month
+      const stuTxList = studentTransactionsMap.get(s.id) || [];
+      stuTxList.sort((a, b) => new Date(a.paymentDate || a.createdAt).getTime() - new Date(b.paymentDate || b.createdAt).getTime());
+
+      const latestTx = stuTxList.length > 0 ? stuTxList[stuTxList.length - 1] : null;
+      const primaryDate = latestTx?.paymentDate || latestTx?.createdAt || rec?.lastPaymentDate;
+      const dayName = primaryDate ? getArabicDayName(primaryDate) : '-';
+      const dateFormatted = primaryDate ? formatArabicDateOnly(primaryDate) : '-';
+      const timeFormatted = primaryDate ? formatArabicTimeOnly(primaryDate) : '-';
+      const collector = latestTx?.recordedBy || rec?.updatedBy || currentDeviceName || 'المكتب';
+      const receiptNo = latestTx?.receiptNumber || rec?.receiptNumber || '-';
+
       return {
         student: s,
         record: rec,
@@ -77,11 +142,16 @@ export const PrintReportModal: React.FC<Props> = ({
         paid,
         remaining: rem,
         status,
-        lastPaymentDate: rec?.lastPaymentDate,
-        receiptNumber: rec?.receiptNumber,
+        transactions: stuTxList,
+        primaryDate,
+        dayName,
+        dateFormatted,
+        timeFormatted,
+        collector,
+        receiptNo,
       };
     });
-  }, [students, monthlyRecords, currentMonthKey]);
+  }, [students, monthlyRecords, studentTransactionsMap, currentMonthKey, currentDeviceName]);
 
   // Filtered by Grade and Group
   const gradeAndGroupFiltered = useMemo(() => {
@@ -105,7 +175,137 @@ export const PrintReportModal: React.FC<Props> = ({
     return gradeAndGroupFiltered.filter((item) => item.status !== 'paid');
   }, [gradeAndGroupFiltered]);
 
-  // Totals calculations
+  // -------------------------------------------------------------
+  // DAILY GROUPING OF TRANSACTIONS (سبت، حد، اتنين، تلات...)
+  // -------------------------------------------------------------
+  interface DayGroup {
+    dateKey: string; // e.g. "2026-11-07"
+    dayName: string; // e.g. "السبت"
+    dateFormatted: string; // e.g. "07/11/2026"
+    fullDateLabel: string; // e.g. "السبت 07 نوفمبر 2026"
+    transactions: {
+      id: string;
+      receiptNumber: string;
+      studentId: string;
+      studentName: string;
+      studentCode: string;
+      grade: string;
+      groupName?: string;
+      amount: number;
+      recordedBy: string;
+      timeFormatted: string;
+      timestamp: number;
+      note?: string;
+    }[];
+    dayTotal: number;
+    operationsCount: number;
+  }
+
+  const dailyGroupedData = useMemo(() => {
+    // 1. Gather all transactions matching filters
+    const validStudentIds = new Set(gradeAndGroupFiltered.map((i) => i.student.id));
+    const dayMap = new Map<string, DayGroup>();
+
+    // Process explicit transactions
+    transactions.forEach((tx) => {
+      if (tx.monthKey !== currentMonthKey || tx.type === 'refund') return;
+      if (!validStudentIds.has(tx.studentId)) return;
+
+      const dateISO = tx.paymentDate || tx.createdAt || new Date().toISOString();
+      const dateKey = dateISO.slice(0, 10); // YYYY-MM-DD
+      const student = studentsMap.get(tx.studentId);
+
+      const d = new Date(dateISO);
+      const dayName = getArabicDayName(dateISO);
+      const dateFormatted = formatArabicDateOnly(dateISO);
+      const timeFormatted = formatArabicTimeOnly(dateISO);
+      const fullDateLabel = `يوم ${dayName} - ${d.toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' })}`;
+
+      const currentGroup: DayGroup = dayMap.get(dateKey) || {
+        dateKey,
+        dayName,
+        dateFormatted,
+        fullDateLabel,
+        transactions: [],
+        dayTotal: 0,
+        operationsCount: 0,
+      };
+
+      currentGroup.transactions.push({
+        id: tx.id,
+        receiptNumber: tx.receiptNumber,
+        studentId: tx.studentId,
+        studentName: tx.studentName || student?.name || 'طالب',
+        studentCode: tx.studentCode || student?.studentCode || '-',
+        grade: student?.grade || '-',
+        groupName: student?.groupName,
+        amount: tx.amount,
+        recordedBy: tx.recordedBy || 'المسؤول الرئيسي',
+        timeFormatted,
+        timestamp: d.getTime(),
+        note: tx.note,
+      });
+
+      currentGroup.dayTotal += tx.amount || 0;
+      currentGroup.operationsCount += 1;
+      dayMap.set(dateKey, currentGroup);
+    });
+
+    // Also include any students who paid in monthlyRecords but had no transaction row
+    gradeAndGroupFiltered.forEach((item) => {
+      if (item.paid > 0 && item.transactions.length === 0) {
+        const dateISO = item.primaryDate || new Date().toISOString();
+        const dateKey = dateISO.slice(0, 10);
+        const d = new Date(dateISO);
+        const dayName = getArabicDayName(dateISO);
+        const dateFormatted = formatArabicDateOnly(dateISO);
+        const timeFormatted = formatArabicTimeOnly(dateISO);
+        const fullDateLabel = `يوم ${dayName} - ${d.toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' })}`;
+
+        const currentGroup: DayGroup = dayMap.get(dateKey) || {
+          dateKey,
+          dayName,
+          dateFormatted,
+          fullDateLabel,
+          transactions: [],
+          dayTotal: 0,
+          operationsCount: 0,
+        };
+
+        currentGroup.transactions.push({
+          id: `syn_${item.student.id}`,
+          receiptNumber: item.receiptNo,
+          studentId: item.student.id,
+          studentName: item.student.name,
+          studentCode: item.student.studentCode,
+          grade: item.student.grade,
+          groupName: item.student.groupName,
+          amount: item.paid,
+          recordedBy: item.collector,
+          timeFormatted,
+          timestamp: d.getTime(),
+        });
+
+        currentGroup.dayTotal += item.paid;
+        currentGroup.operationsCount += 1;
+        dayMap.set(dateKey, currentGroup);
+      }
+    });
+
+    // Sort days chronologically ascending (السبت، الأحد، الإثنين...)
+    const sortedDays = Array.from(dayMap.values()).sort((a, b) => {
+      return new Date(a.dateKey).getTime() - new Date(b.dateKey).getTime();
+    });
+
+    // Inside each day, sort transactions chronologically by time
+    sortedDays.forEach((dg) => {
+      dg.transactions.sort((a, b) => a.timestamp - b.timestamp);
+    });
+
+    return sortedDays;
+  }, [transactions, gradeAndGroupFiltered, currentMonthKey, studentsMap]);
+
+  // Overall Totals calculations
   const totals = useMemo(() => {
     let reqSum = 0;
     let paidSum = 0;
@@ -123,6 +323,9 @@ export const PrintReportModal: React.FC<Props> = ({
       remSum += i.remaining;
     });
 
+    const totalTransactionsSum = dailyGroupedData.reduce((sum, d) => sum + d.dayTotal, 0);
+    const totalTransactionsCount = dailyGroupedData.reduce((sum, d) => sum + d.operationsCount, 0);
+
     return {
       count: listToSum.length,
       paidCount: paidList.length,
@@ -130,8 +333,11 @@ export const PrintReportModal: React.FC<Props> = ({
       reqSum,
       paidSum,
       remSum,
+      totalTransactionsSum,
+      totalTransactionsCount,
+      daysCount: dailyGroupedData.length,
     };
-  }, [gradeAndGroupFiltered, paidList, unpaidList, reportType]);
+  }, [gradeAndGroupFiltered, paidList, unpaidList, reportType, dailyGroupedData]);
 
   if (!isOpen) return null;
 
@@ -140,107 +346,214 @@ export const PrintReportModal: React.FC<Props> = ({
   };
 
   const getReportTitle = () => {
-    if (reportType === 'paid') return `كشف سداد المصروفات - الطلاب المسددين بالكامل`;
-    if (reportType === 'unpaid') return `كشف الطلاب غير المسددين والمتبقي عليهم مصروفات`;
-    return `كشف شامل: المسددين وغير المسددين (مفصل لكل فئة)`;
+    if (reportType === 'paid') return `كشف سداد المصروفات - مقسم يوماً بيوم (سبت، أحد، إثنين...) بالساعة والمحصل`;
+    if (reportType === 'unpaid') return `كشف الطلاب غير المسددين والمتبقي عليهم مصروفات (مع أرقام أولياء الأمور)`;
+    return `كشف شامل: العمليات اليومية (سبت، أحد، إثنين...) + كشف الطلاب غير المسددين`;
   };
 
-  // Helper render for Paid Table
-  const renderPaidTable = (items: typeof paidList, isSubSection = false) => {
-    const sectionReq = items.reduce((sum, i) => sum + i.required, 0);
-    const sectionPaid = items.reduce((sum, i) => sum + i.paid, 0);
+  // ------------------------------------------------------------------
+  // RENDER 1: DAY-BY-DAY TRANSACTIONS (سبت، حد، اتنين، تلات، أربع، خميس، جمعة)
+  // ------------------------------------------------------------------
+  const renderDailyGroupedTables = (isSubSection = false) => {
+    if (dailyGroupedData.length === 0) {
+      return (
+        <div className="text-center py-8 bg-slate-50 rounded-xl text-slate-400 text-xs font-medium border border-slate-200">
+          لا توجد معاملات تحصيل مسجلة في هذا الشهر حتى الآن.
+        </div>
+      );
+    }
 
     return (
-      <div className="space-y-2">
+      <div className="space-y-6">
         {isSubSection && (
-          <div className="flex items-center justify-between bg-emerald-50 border-r-4 border-emerald-600 px-3 py-2 rounded-r-lg">
+          <div className="flex items-center justify-between bg-emerald-50 border-r-4 border-emerald-600 px-4 py-2.5 rounded-r-xl">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-              <h3 className="font-black text-sm text-emerald-900">
-                القسم الأول: كشف الطلاب المسددين بالكامل ({items.length} طالب)
-              </h3>
+              <CalendarDays className="w-5 h-5 text-emerald-700" />
+              <div>
+                <h3 className="font-black text-sm text-emerald-950">
+                  القسم الأول: كشف التحصيلات اليومية مرتبة حسب التاريخ (سبت، أحد، إثنين... يوم بيوم)
+                </h3>
+                <p className="text-[11px] text-emerald-800">
+                  موضح لكل عملية: الساعة كام بالدقيقة والثانية ومين المساعد اللي استلمها
+                </p>
+              </div>
             </div>
-            <div className="text-xs font-bold text-emerald-800">
-              إجمالي المسدد: {formatCurrency(sectionPaid)}
+            <div className="text-xs font-black text-emerald-800 bg-white px-3 py-1.5 rounded-lg border border-emerald-200">
+              إجمالي المحصل: {formatCurrency(totals.totalTransactionsSum)}
             </div>
           </div>
         )}
 
-        {items.length === 0 ? (
-          <div className="text-center py-6 bg-slate-50 rounded-lg text-slate-400 text-xs font-medium border border-slate-200">
-            لا يوجد طلاب مسددين مطابقين للخيارات المحددة.
+        {/* Loop through each day (سبت، أحد، إثنين...) */}
+        {dailyGroupedData.map((dayGroup, dayIdx) => (
+          <div 
+            key={dayGroup.dateKey} 
+            className="space-y-2 border border-slate-300 rounded-xl overflow-hidden shadow-2xs print:shadow-none break-inside-avoid"
+          >
+            {/* Distinct Day Header Banner */}
+            <div className="bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span className="w-6 h-6 rounded-lg bg-emerald-500 text-slate-900 flex items-center justify-center font-black text-xs">
+                  {dayIdx + 1}
+                </span>
+                <span className="font-black text-sm sm:text-base text-emerald-300">
+                  {dayGroup.fullDateLabel}
+                </span>
+                <span className="bg-slate-800 text-slate-300 border border-slate-700 px-2.5 py-0.5 rounded-full text-[11px] font-bold">
+                  {dayGroup.operationsCount} عملية تحصيل
+                </span>
+              </div>
+              <div className="font-bold text-xs sm:text-sm text-emerald-400 bg-slate-800 px-3 py-1 rounded-lg border border-slate-700">
+                إجمالي تحصيل هذا اليوم: <strong className="font-black text-white">{formatCurrency(dayGroup.dayTotal)}</strong>
+              </div>
+            </div>
+
+            {/* Day Transactions Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-right border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300">
+                    <th className="py-2 px-1.5 border border-slate-300 w-8 text-center">م</th>
+                    <th className="py-2 px-2.5 border border-slate-300 w-28 text-center bg-amber-50/60 text-amber-950 font-black">
+                      <Clock className="w-3.5 h-3.5 inline ml-1 text-amber-700" />
+                      الساعة كام (التوقيت)
+                    </th>
+                    <th className="py-2 px-2 border border-slate-300 w-16 text-center">الكود</th>
+                    <th className="py-2 px-2.5 border border-slate-300 font-bold">اسم الطالب</th>
+                    <th className="py-2 px-2 border border-slate-300">الصف والمجموعة</th>
+                    <th className="py-2 px-2.5 border border-slate-300 text-center bg-emerald-50 text-emerald-950 font-black">
+                      دفع كام (المبلغ)
+                    </th>
+                    <th className="py-2 px-2.5 border border-slate-300 text-center bg-blue-50/50 text-blue-950 font-bold">
+                      <UserCheck className="w-3 h-3 inline ml-1 text-blue-700" />
+                      مين اللي عملها (المساعد / المحصل)
+                    </th>
+                    <th className="py-2 px-2 border border-slate-300 text-center font-mono text-slate-600">
+                      رقم الإيصال
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {dayGroup.transactions.map((tx, txIdx) => (
+                    <tr key={tx.id || txIdx} className={txIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/80'}>
+                      <td className="py-1.5 px-1.5 border border-slate-300 text-center font-bold text-slate-500">
+                        {txIdx + 1}
+                      </td>
+                      <td className="py-1.5 px-2.5 border border-slate-300 text-center font-mono font-bold text-slate-900 bg-amber-50/30">
+                        <span className="inline-block bg-white px-2 py-0.5 rounded border border-amber-200 text-amber-950 text-[11px] shadow-2xs">
+                          {tx.timeFormatted}
+                        </span>
+                      </td>
+                      <td className="py-1.5 px-2 border border-slate-300 text-center font-mono font-bold text-slate-900">
+                        #{tx.studentCode}
+                      </td>
+                      <td className="py-1.5 px-2.5 border border-slate-300 font-bold text-slate-900">
+                        {tx.studentName}
+                        {tx.note && (
+                          <span className="mr-1 text-[10px] text-slate-500 font-normal">
+                            ({tx.note})
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-2 border border-slate-300 text-slate-700">
+                        <div>{tx.grade}</div>
+                        {tx.groupName && (
+                          <div className="text-[10px] text-slate-500">{tx.groupName}</div>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-2.5 border border-slate-300 text-center font-black text-emerald-800 bg-emerald-50/60">
+                        {formatCurrency(tx.amount)}
+                      </td>
+                      <td className="py-1.5 px-2.5 border border-slate-300 text-center font-bold text-slate-900">
+                        <span className="inline-block bg-blue-50 text-blue-900 border border-blue-200 px-2 py-0.5 rounded-md text-[10px]">
+                          {tx.recordedBy}
+                        </span>
+                      </td>
+                      <td className="py-1.5 px-2 border border-slate-300 text-center font-mono text-[10px] text-slate-600">
+                        {tx.receiptNumber}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-emerald-50 font-bold border-t-2 border-slate-900 text-emerald-950">
+                    <td colSpan={5} className="py-2 px-3 border border-slate-300 text-left font-black">
+                      مجموع إجمالي تحصيلات {dayGroup.fullDateLabel} ({dayGroup.operationsCount} عملية):
+                    </td>
+                    <td className="py-2 px-2.5 border border-slate-300 text-center font-black text-emerald-800 bg-emerald-100/60">
+                      {formatCurrency(dayGroup.dayTotal)}
+                    </td>
+                    <td colSpan={2} className="py-2 px-2 border border-slate-300 text-center text-[10px] text-slate-600">
+                      معتمد ومسجل بسجل الخزينة
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           </div>
-        ) : (
+        ))}
+
+        {/* Grand Daily Summary Table (ملخص كل يوم) */}
+        <div className="mt-6 bg-slate-50 border border-slate-300 rounded-xl p-4 break-inside-avoid">
+          <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-200">
+            <Calendar className="w-4 h-4 text-emerald-700" />
+            <h4 className="font-bold text-xs text-slate-900">
+              جدول ملخص تحصيلات الأيام لشهر {monthLabel} (إجمالي {dailyGroupedData.length} أيام عمل):
+            </h4>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-right border-collapse text-xs">
               <thead>
-                <tr className="bg-emerald-900 text-white font-bold border border-emerald-900">
-                  <th className="py-2 px-2 border border-emerald-800 w-10 text-center">م</th>
-                  <th className="py-2 px-2.5 border border-emerald-800 w-20 text-center">الكود</th>
-                  <th className="py-2 px-3 border border-emerald-800">اسم الطالب المسدد</th>
-                  <th className="py-2 px-2.5 border border-emerald-800">الصف والمجموعة</th>
-                  <th className="py-2 px-2.5 border border-emerald-800 text-center">المطلوب</th>
-                  <th className="py-2 px-2.5 border border-emerald-800 text-center bg-emerald-800">المسدد بالكامل</th>
-                  <th className="py-2 px-2.5 border border-emerald-800 text-center">رقم الإيصال</th>
-                  <th className="py-2 px-2.5 border border-emerald-800 text-center">تاريخ السداد</th>
+                <tr className="bg-slate-200 text-slate-800 font-bold">
+                  <th className="py-1.5 px-2 border border-slate-300 text-center w-10">م</th>
+                  <th className="py-1.5 px-3 border border-slate-300">اليوم والتاريخ</th>
+                  <th className="py-1.5 px-3 border border-slate-300 text-center">عدد العمليات</th>
+                  <th className="py-1.5 px-3 border border-slate-300 text-center">إجمالي المحصل في اليوم</th>
+                  <th className="py-1.5 px-3 border border-slate-300 text-center">النسبة من الشهر</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
-                {items.map((item, idx) => (
-                  <tr key={item.student.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-emerald-50/20'}>
-                    <td className="py-1.5 px-2 border border-slate-300 text-center font-bold text-slate-500">
-                      {idx + 1}
-                    </td>
-                    <td className="py-1.5 px-2.5 border border-slate-300 text-center font-mono font-bold text-slate-900">
-                      {item.student.studentCode}
-                    </td>
-                    <td className="py-1.5 px-3 border border-slate-300 font-bold text-slate-900">
-                      {item.student.name}
-                      {item.student.hasDiscount && (
-                        <span className="mr-1.5 text-[10px] text-amber-700 font-normal">
-                          (خصم: {item.student.discountAmount} ج)
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-1.5 px-2.5 border border-slate-300 text-slate-700">
-                      <div>{item.student.grade}</div>
-                      {item.student.groupName && (
-                        <div className="text-[10px] text-slate-500">{item.student.groupName}</div>
-                      )}
-                    </td>
-                    <td className="py-1.5 px-2.5 border border-slate-300 text-center font-medium">
-                      {formatCurrency(item.required)}
-                    </td>
-                    <td className="py-1.5 px-2.5 border border-slate-300 text-center font-black text-emerald-800 bg-emerald-50/60">
-                      {formatCurrency(item.paid)}
-                    </td>
-                    <td className="py-1.5 px-2.5 border border-slate-300 text-center font-mono text-[11px] text-slate-600">
-                      {item.receiptNumber || '-'}
-                    </td>
-                    <td className="py-1.5 px-2.5 border border-slate-300 text-center text-[10px] text-slate-600">
-                      {item.lastPaymentDate ? formatDateTime(item.lastPaymentDate) : '-'}
-                    </td>
-                  </tr>
-                ))}
+              <tbody>
+                {dailyGroupedData.map((dg, idx) => {
+                  const pct = totals.totalTransactionsSum > 0 
+                    ? Math.round((dg.dayTotal / totals.totalTransactionsSum) * 100) 
+                    : 0;
+
+                  return (
+                    <tr key={dg.dateKey} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                      <td className="py-1.5 px-2 border border-slate-300 text-center font-bold text-slate-500">{idx + 1}</td>
+                      <td className="py-1.5 px-3 border border-slate-300 font-bold text-slate-900">{dg.fullDateLabel}</td>
+                      <td className="py-1.5 px-3 border border-slate-300 text-center font-bold text-slate-700">{dg.operationsCount} عملية</td>
+                      <td className="py-1.5 px-3 border border-slate-300 text-center font-black text-emerald-800">{formatCurrency(dg.dayTotal)}</td>
+                      <td className="py-1.5 px-3 border border-slate-300 text-center font-mono text-[11px] text-slate-600">{pct}%</td>
+                    </tr>
+                  );
+                })}
               </tbody>
               <tfoot>
-                <tr className="bg-emerald-50/80 font-bold border-t-2 border-emerald-900 text-emerald-950">
-                  <td colSpan={4} className="py-2 px-3 border border-slate-300 text-left font-black">
-                    مجموع المسددين ({items.length} طالب):
+                <tr className="bg-slate-900 text-white font-bold">
+                  <td colSpan={2} className="py-2 px-3 border border-slate-700 text-left font-black">
+                    الإجمالي العام لجميع الأيام ({dailyGroupedData.length} يوم):
                   </td>
-                  <td className="py-2 px-2.5 border border-slate-300 text-center">{formatCurrency(sectionReq)}</td>
-                  <td className="py-2 px-2.5 border border-slate-300 text-center font-black text-emerald-800">{formatCurrency(sectionPaid)}</td>
-                  <td colSpan={2} className="border border-slate-300"></td>
+                  <td className="py-2 px-3 border border-slate-700 text-center font-black text-emerald-300">
+                    {totals.totalTransactionsCount} عملية
+                  </td>
+                  <td className="py-2 px-3 border border-slate-700 text-center font-black text-emerald-300">
+                    {formatCurrency(totals.totalTransactionsSum)}
+                  </td>
+                  <td className="py-2 px-3 border border-slate-700 text-center font-mono">100%</td>
                 </tr>
               </tfoot>
             </table>
           </div>
-        )}
+        </div>
       </div>
     );
   };
 
-  // Helper render for Unpaid Table
+  // ------------------------------------------------------------------
+  // RENDER 2: UNPAID TABLE (غير المسددين والسداد الجزئي)
+  // ------------------------------------------------------------------
   const renderUnpaidTable = (items: typeof unpaidList, isSubSection = false) => {
     const sectionReq = items.reduce((sum, i) => sum + i.required, 0);
     const sectionPaid = items.reduce((sum, i) => sum + i.paid, 0);
@@ -249,14 +562,19 @@ export const PrintReportModal: React.FC<Props> = ({
     return (
       <div className="space-y-2">
         {isSubSection && (
-          <div className="flex items-center justify-between bg-red-50 border-r-4 border-red-600 px-3 py-2 rounded-r-lg">
+          <div className="flex items-center justify-between bg-red-50 border-r-4 border-red-600 px-4 py-2.5 rounded-r-xl">
             <div className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-red-700" />
-              <h3 className="font-black text-sm text-red-900">
-                القسم الثاني: كشف الطلاب غير المسددين والمتبقي عليهم ({items.length} طالب)
-              </h3>
+              <AlertCircle className="w-5 h-5 text-red-700" />
+              <div>
+                <h3 className="font-black text-sm text-red-950">
+                  القسم الثاني: كشف الطلاب غير المسددين والمتبقي عليهم ({items.length} طالب)
+                </h3>
+                <p className="text-[11px] text-red-800">
+                  موضح أرقام هواتف الطالب وأولياء الأمور وقيمة المتبقي في الذمة
+                </p>
+              </div>
             </div>
-            <div className="text-xs font-bold text-red-800">
+            <div className="text-xs font-black text-red-800 bg-white px-3 py-1.5 rounded-lg border border-red-200">
               إجمالي المتبقي: {formatCurrency(sectionRem)}
             </div>
           </div>
@@ -267,32 +585,34 @@ export const PrintReportModal: React.FC<Props> = ({
             رائع! لا يوجد طلاب متأخرين أو غير مسددين في هذا الكشف.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto border border-slate-300 rounded-xl">
             <table className="w-full text-right border-collapse text-xs">
               <thead>
                 <tr className="bg-red-900 text-white font-bold border border-red-900">
-                  <th className="py-2 px-2 border border-red-800 w-10 text-center">م</th>
-                  <th className="py-2 px-2.5 border border-red-800 w-20 text-center">الكود</th>
-                  <th className="py-2 px-3 border border-red-800">اسم الطالب المتأخر</th>
-                  <th className="py-2 px-2.5 border border-red-800">الصف والمجموعة</th>
-                  <th className="py-2 px-2.5 border border-red-800">هاتف الطالب</th>
-                  <th className="py-2 px-2.5 border border-red-800">هاتف ولي الأمر</th>
+                  <th className="py-2 px-1.5 border border-red-800 w-8 text-center">م</th>
+                  <th className="py-2 px-2 border border-red-800 w-16 text-center">الكود</th>
+                  <th className="py-2 px-2.5 border border-red-800">اسم الطالب المتأخر</th>
+                  <th className="py-2 px-2 border border-red-800">الصف والمجموعة</th>
+                  <th className="py-2 px-2 border border-red-800 font-mono">هاتف الطالب</th>
+                  <th className="py-2 px-2 border border-red-800 font-mono">هاتف ولي الأمر</th>
                   <th className="py-2 px-2 border border-red-800 text-center">المطلوب</th>
-                  <th className="py-2 px-2 border border-red-800 text-center">المدفوع</th>
-                  <th className="py-2 px-2.5 border border-red-800 text-center bg-red-800">المتبقي</th>
-                  <th className="py-2 px-2.5 border border-red-800 text-center">الحالة</th>
+                  <th className="py-2 px-2 border border-red-800 text-center">المدفوع حتى الآن</th>
+                  <th className="py-2 px-2.5 border border-red-800 text-center bg-red-800 font-black">
+                    المتبقي في الذمة
+                  </th>
+                  <th className="py-2 px-2.5 border border-red-800 text-center">حالة وتاريخ آخر دفعة</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {items.map((item, idx) => (
                   <tr key={item.student.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-red-50/20'}>
-                    <td className="py-1.5 px-2 border border-slate-300 text-center font-bold text-slate-500">
+                    <td className="py-1.5 px-1.5 border border-slate-300 text-center font-bold text-slate-500">
                       {idx + 1}
                     </td>
-                    <td className="py-1.5 px-2.5 border border-slate-300 text-center font-mono font-bold text-slate-900">
-                      {item.student.studentCode}
+                    <td className="py-1.5 px-2 border border-slate-300 text-center font-mono font-bold text-slate-900">
+                      #{item.student.studentCode}
                     </td>
-                    <td className="py-1.5 px-3 border border-slate-300 font-bold text-slate-900">
+                    <td className="py-1.5 px-2.5 border border-slate-300 font-bold text-slate-900">
                       {item.student.name}
                       {item.student.hasDiscount && (
                         <span className="mr-1.5 text-[10px] text-amber-700 font-normal">
@@ -300,39 +620,54 @@ export const PrintReportModal: React.FC<Props> = ({
                         </span>
                       )}
                     </td>
-                    <td className="py-1.5 px-2.5 border border-slate-300 text-slate-700">
+                    <td className="py-1.5 px-2 border border-slate-300 text-slate-700">
                       <div>{item.student.grade}</div>
                       {item.student.groupName && (
                         <div className="text-[10px] text-slate-500">{item.student.groupName}</div>
                       )}
                     </td>
-                    <td className="py-1.5 px-2.5 border border-slate-300 font-mono text-[11px] text-slate-700">
+                    <td className="py-1.5 px-2 border border-slate-300 font-mono text-[11px] text-slate-700">
                       {item.student.phone || '-'}
                     </td>
-                    <td className="py-1.5 px-2.5 border border-slate-300 font-mono text-[11px] font-bold text-slate-900">
+                    <td className="py-1.5 px-2 border border-slate-300 font-mono text-[11px] font-bold text-slate-900">
                       {item.student.parentPhone}
                     </td>
                     <td className="py-1.5 px-2 border border-slate-300 text-center font-medium">
                       {formatCurrency(item.required)}
                     </td>
-                    <td className="py-1.5 px-2 border border-slate-300 text-center text-slate-600">
-                      {formatCurrency(item.paid)}
+                    <td className="py-1.5 px-2 border border-slate-300 text-center text-slate-600 font-bold">
+                      {item.paid > 0 ? (
+                        <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-black">
+                          {formatCurrency(item.paid)}
+                        </span>
+                      ) : (
+                        '0 ج.م'
+                      )}
                     </td>
                     <td className="py-1.5 px-2.5 border border-slate-300 text-center font-black text-red-700 bg-red-50/60">
                       {formatCurrency(item.remaining)}
                     </td>
-                    <td className="py-1.5 px-2.5 border border-slate-300 text-center text-[10px] font-bold">
+                    <td className="py-1.5 px-2.5 border border-slate-300 text-center text-[10px]">
                       {item.status === 'partial' ? (
-                        <span className="text-amber-700">سداد جزئي</span>
+                        <div>
+                          <span className="inline-block text-amber-800 font-bold bg-amber-100 px-1.5 py-0.5 rounded">
+                            سداد جزئي: {item.paid} ج
+                          </span>
+                          <div className="text-[9px] text-slate-600 font-medium mt-0.5">
+                            {item.dayName} {item.dateFormatted} ({item.timeFormatted})
+                          </div>
+                        </div>
                       ) : (
-                        <span className="text-red-600">لم يسدد</span>
+                        <span className="text-red-600 font-bold bg-red-100/60 px-2 py-0.5 rounded">
+                          لم يسدد إطلاقاً
+                        </span>
                       )}
                     </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
-                <tr className="bg-red-50/80 font-bold border-t-2 border-red-900 text-red-950">
+                <tr className="bg-red-50/90 font-bold border-t-2 border-red-900 text-red-950">
                   <td colSpan={4} className="py-2 px-3 border border-slate-300 text-left font-black">
                     مجموع غير المسددين ({items.length} طالب):
                   </td>
@@ -362,10 +697,10 @@ export const PrintReportModal: React.FC<Props> = ({
             </div>
             <div>
               <h2 className="font-black text-slate-900 text-base sm:text-lg">
-                طباعة كشوف الطلاب والمصروفات (PDF)
+                كشوف السداد والتحصيل اليومي الرسمية (PDF)
               </h2>
               <p className="text-xs text-slate-500 font-medium">
-                معاينة رسمية جاهزة للطباعة المباشرة أو الحفظ كملف PDF لشهر {monthLabel}
+                مترتبة حسب الأيام (سبت، أحد، إثنين...) موضح بها الساعة كام ومين اللي استلم والمبلغ لشهر {monthLabel}
               </p>
             </div>
           </div>
@@ -376,7 +711,7 @@ export const PrintReportModal: React.FC<Props> = ({
               className="flex-1 sm:flex-none px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-md transition"
             >
               <Printer className="w-4 h-4" />
-              <span>طباعة / حفظ كـ PDF</span>
+              <span>طباعة / حفظ كـ PDF الآن</span>
             </button>
             <button
               onClick={onClose}
@@ -400,10 +735,10 @@ export const PrintReportModal: React.FC<Props> = ({
                   ? 'bg-slate-900 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
-              title="طباعة الكل: يظهر المسددين في جدول منفصل والغير مسددين في جدول منفصل بنفس الـ PDF"
+              title="طباعة الكل: التحصيلات اليومية مقسمة بالأيام + كشف الطلاب غير المسددين في نفس الملف"
             >
               <FileText className="w-3.5 h-3.5" />
-              <span>الكل (مسددين + غير مسددين في نفس الملف)</span>
+              <span>الكل (التحصيلات اليومية + غير المسددين)</span>
             </button>
 
             <button
@@ -414,8 +749,8 @@ export const PrintReportModal: React.FC<Props> = ({
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>المسددين فقط ({paidList.length})</span>
+              <CalendarDays className="w-3.5 h-3.5" />
+              <span>التحصيلات اليومية فقط ({dailyGroupedData.length} يوم)</span>
             </button>
 
             <button
@@ -459,15 +794,18 @@ export const PrintReportModal: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Tip Box (Hidden in Print) */}
+        {/* Info Banner (Hidden in Print) */}
         <div className="no-print bg-emerald-50/70 border-b border-emerald-100 px-4 py-2 text-[11px] text-emerald-800 flex items-center justify-between">
-          <span>
-            💡 <strong>عند طباعة "الكل":</strong> يتم تقسيم التقرير في نفس الـ PDF إلى جدول خاص بالمسددين أولاً، ثم جدول خاص بغير المسددين مع أرقام هواتفهم، ثم إجمالي عام وتوقيع.
+          <span className="flex items-center gap-1.5">
+            <CalendarDays className="w-4 h-4 text-emerald-700 flex-shrink-0" />
+            <span>
+              <strong>الترتيب الزمني اليومي:</strong> يتم تجميع العمليات لكل يوم على حدة (سبت، أحد، إثنين، ثلاثاء...) موضحاً في كل عملية توقيتها الدقيق (الساعة كام) واسم المساعد الذي استلم المبلغ مع إجمالي كل يوم.
+            </span>
           </span>
-          <span className="font-bold text-emerald-800">
+          <span className="font-bold text-emerald-900 whitespace-nowrap mr-2">
             {reportType === 'all' 
-              ? `إجمالي ${gradeAndGroupFiltered.length} طالب (${paidList.length} مسدد + ${unpaidList.length} متبقي)` 
-              : `العدد: ${totals.count} طالب`}
+              ? `${dailyGroupedData.length} يوم عمل • ${unpaidList.length} متبقي` 
+              : `إجمالي أيام التحصيل: ${dailyGroupedData.length} يوم`}
           </span>
         </div>
 
@@ -495,27 +833,29 @@ export const PrintReportModal: React.FC<Props> = ({
               </div>
 
               <div className="text-left text-xs text-slate-500 space-y-1">
-                <p><strong>تاريخ الاستخراج:</strong> {new Date().toLocaleDateString('ar-EG')}</p>
-                <p><strong>توقيت الطباعة:</strong> {new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</p>
-                <p><strong>المسؤول / الجهاز:</strong> {currentDeviceName || 'الهاتف الرئيسي'}</p>
+                <p><strong>تاريخ التقرير:</strong> {new Date().toLocaleDateString('ar-EG')}</p>
+                <p><strong>توقيت الطباعة:</strong> {new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
+                <p><strong>المشغل الحالي:</strong> {currentDeviceName || 'الهاتف الرئيسي'}</p>
               </div>
             </div>
 
             {/* Financial Summary Cards on the Printed Report */}
             <div className="grid grid-cols-4 gap-2 sm:gap-3 mb-6 bg-slate-50 p-3 rounded-lg border border-slate-200 text-center text-xs">
               <div className="p-2 bg-white rounded border border-slate-200">
-                <span className="text-slate-500 block text-[10px] font-semibold">إجمالي الطلاب</span>
+                <span className="text-slate-500 block text-[10px] font-semibold">إجمالي أيام العمل</span>
                 <span className="text-base sm:text-lg font-black text-slate-900">
-                  {reportType === 'all' ? gradeAndGroupFiltered.length : totals.count} طالب
+                  {dailyGroupedData.length} يوم
                 </span>
               </div>
               <div className="p-2 bg-white rounded border border-slate-200">
-                <span className="text-slate-500 block text-[10px] font-semibold">المطلوب الكلي</span>
-                <span className="text-base sm:text-lg font-black text-slate-900">{formatCurrency(totals.reqSum)}</span>
+                <span className="text-slate-500 block text-[10px] font-semibold">عدد عمليات التحصيل</span>
+                <span className="text-base sm:text-lg font-black text-slate-900">
+                  {totals.totalTransactionsCount} عملية
+                </span>
               </div>
               <div className="p-2 bg-white rounded border border-slate-200">
-                <span className="text-emerald-700 block text-[10px] font-semibold">المحصل بالخزينة</span>
-                <span className="text-base sm:text-lg font-black text-emerald-700">{formatCurrency(totals.paidSum)}</span>
+                <span className="text-emerald-700 block text-[10px] font-semibold">إجمالي المحصل الفعلي</span>
+                <span className="text-base sm:text-lg font-black text-emerald-700">{formatCurrency(totals.totalTransactionsSum)}</span>
               </div>
               <div className="p-2 bg-white rounded border border-slate-200">
                 <span className="text-red-600 block text-[10px] font-semibold">المتبقي في الذمة</span>
@@ -523,36 +863,62 @@ export const PrintReportModal: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* Content Tables */}
-            {reportType === 'paid' && renderPaidTable(paidList, false)}
+            {/* Content: Depending on selected mode */}
 
+            {/* 1. Daily Transactions Mode Only */}
+            {reportType === 'paid' && renderDailyGroupedTables(false)}
+
+            {/* 2. Unpaid Mode Only */}
             {reportType === 'unpaid' && renderUnpaidTable(unpaidList, false)}
 
-            {/* BOTH in the same PDF when 'all' is selected */}
+            {/* 3. ALL Mode: Daily Grouped Transactions + Unpaid Section in the same PDF */}
             {reportType === 'all' && (
               <div className="space-y-8">
-                {/* 1. Paid Students Section */}
+                {/* 1. Daily Transactions Section (سبت، حد، اتنين...) */}
                 <div>
-                  {renderPaidTable(paidList, true)}
+                  {renderDailyGroupedTables(true)}
                 </div>
 
                 {/* Section Break with Print Page-Break option */}
-                <div className="my-6 border-t-2 border-dashed border-slate-300 print:break-before-page"></div>
+                <div className="my-8 border-t-2 border-dashed border-slate-300 print:break-before-page"></div>
 
-                {/* 2. Unpaid Students Section */}
+                {/* 2. Assistant Collections Audit Breakdown */}
+                {assistantSummary.length > 0 && (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 break-inside-avoid">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-200">
+                      <UserCheck className="w-4 h-4 text-emerald-700" />
+                      <h4 className="font-bold text-xs text-slate-900">
+                        كشف إجمالي تدقيق تحصيلات فريق العمل والمساعدين لشهر {monthLabel}:
+                      </h4>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {assistantSummary.map((asst) => (
+                        <div key={asst.name} className="bg-white p-2.5 rounded-lg border border-slate-200 text-xs">
+                          <span className="font-bold text-slate-800 block truncate">{asst.name}</span>
+                          <div className="flex items-center justify-between mt-1 text-[11px]">
+                            <span className="text-slate-500">{asst.count} عملية تحصيل</span>
+                            <span className="font-black text-emerald-700">{formatCurrency(asst.total)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. Unpaid Students Section */}
                 <div>
                   {renderUnpaidTable(unpaidList, true)}
                 </div>
 
                 {/* Final Unified Summary Box */}
-                <div className="mt-6 bg-slate-900 text-white p-4 rounded-xl flex flex-wrap items-center justify-between gap-4 text-xs font-bold">
+                <div className="mt-6 bg-slate-900 text-white p-4 rounded-xl flex flex-wrap items-center justify-between gap-4 text-xs font-bold break-inside-avoid">
                   <div className="flex items-center gap-2">
                     <Users className="w-5 h-5 text-emerald-400" />
-                    <span>إجمالي كشف الشهر الكامل: {gradeAndGroupFiltered.length} طالب ({paidList.length} مسدد + {unpaidList.length} متبقي)</span>
+                    <span>كشف شهر {monthLabel} المعتمد: {totals.totalTransactionsCount} عملية تحصيل عبر {dailyGroupedData.length} يوم عمل</span>
                   </div>
                   <div className="flex items-center gap-4">
                     <span>المطلوب: {formatCurrency(totals.reqSum)}</span>
-                    <span className="text-emerald-400">المحصل: {formatCurrency(totals.paidSum)}</span>
+                    <span className="text-emerald-400">إجمالي المحصل: {formatCurrency(totals.totalTransactionsSum)}</span>
                     <span className="text-red-400">المتبقي: {formatCurrency(totals.remSum)}</span>
                   </div>
                 </div>
@@ -560,13 +926,13 @@ export const PrintReportModal: React.FC<Props> = ({
             )}
 
             {/* Signature and Verification Footer on Paper */}
-            <div className="mt-8 pt-6 border-t border-slate-300 flex items-end justify-between text-xs text-slate-600">
+            <div className="mt-8 pt-6 border-t border-slate-300 flex items-end justify-between text-xs text-slate-600 break-inside-avoid">
               <div>
-                <p><strong>المسؤول / الأسيستنت:</strong> {currentDeviceName || 'الهاتف الرئيسي'}</p>
-                <p className="mt-1 text-[11px] text-slate-400">منظومة الأستاذ لإدارة المصروفات الشهرية والمتبقي • مزامنة سحابية حية</p>
+                <p><strong>المسؤول / المشغل:</strong> {currentDeviceName || 'الهاتف الرئيسي'}</p>
+                <p className="mt-1 text-[11px] text-slate-400">منظومة {teacherName} لإدارة المصروفات الشهرية والمتبقي • مزامنة سحابية حية</p>
               </div>
               <div className="text-center">
-                <p className="font-bold text-slate-800">توقيع المعلم / الأستاذ</p>
+                <p className="font-bold text-slate-800">توقيع المعلم / المالك الرئيسي</p>
                 <div className="w-48 border-b-2 border-dotted border-slate-400 mt-6"></div>
               </div>
             </div>

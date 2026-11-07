@@ -19,7 +19,7 @@ import {
   Upload,
   Printer
 } from 'lucide-react';
-import { Student, MonthlyRecord, PaymentStatus } from '../types';
+import { Student, MonthlyRecord, PaymentStatus, SystemUser } from '../types';
 import { formatCurrency, GRADES_LIST, createWhatsAppLink } from '../utils/helpers';
 
 interface Props {
@@ -36,6 +36,7 @@ interface Props {
   onOpenPrintReport?: (mode: 'paid' | 'unpaid' | 'all') => void;
   teacherName: string;
   availableGrades?: string[];
+  currentUser?: SystemUser | null;
 }
 
 export const StudentTable: React.FC<Props> = ({
@@ -52,7 +53,9 @@ export const StudentTable: React.FC<Props> = ({
   onOpenPrintReport,
   teacherName,
   availableGrades = GRADES_LIST,
+  currentUser,
 }) => {
+  const isAdmin = currentUser ? currentUser.role === 'admin' : true;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGrade, setSelectedGrade] = useState('ALL');
   const [selectedGroup, setSelectedGroup] = useState('ALL');
@@ -497,13 +500,15 @@ export const StudentTable: React.FC<Props> = ({
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
 
-                        <button
-                          onClick={() => onDeleteStudent(student.id, student.name)}
-                          className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition"
-                          title="حذف الطالب"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => onDeleteStudent(student.id, student.name)}
+                            className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition"
+                            title="حذف الطالب (صلاحية المالك فقط)"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

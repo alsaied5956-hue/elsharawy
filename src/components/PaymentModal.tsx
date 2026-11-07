@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, CreditCard, DollarSign, CheckCircle, AlertTriangle, RotateCcw, Smartphone, HelpCircle } from 'lucide-react';
-import { Student, MonthlyRecord } from '../types';
+import { Student, MonthlyRecord, SystemUser } from '../types';
 import { formatCurrency, generateReceiptNumber } from '../utils/helpers';
 
 interface Props {
@@ -33,6 +33,7 @@ interface Props {
     reason: string;
   }) => Promise<any>;
   currentDeviceName: string;
+  currentUser?: SystemUser | null;
 }
 
 export const PaymentModal: React.FC<Props> = ({
@@ -45,7 +46,12 @@ export const PaymentModal: React.FC<Props> = ({
   onSavePayment,
   onRefundPayment,
   currentDeviceName,
+  currentUser,
 }) => {
+  const defaultRecorder = currentUser 
+    ? `${currentUser.name} (${currentUser.role === 'admin' ? 'المالك الرئيسي' : 'مساعد تحصيل'})` 
+    : (currentDeviceName || 'مستر أحمد الشعراوي');
+
   const requiredFee = existingRecord?.requiredAmount ?? (student?.monthlyFee || 250);
   const previouslyPaid = existingRecord?.paidAmount ?? 0;
   const currentRemaining = Math.max(0, requiredFee - previouslyPaid);
@@ -55,7 +61,7 @@ export const PaymentModal: React.FC<Props> = ({
 
   // Payment state
   const [payingNow, setPayingNow] = useState<number | ''>(currentRemaining > 0 ? currentRemaining : requiredFee);
-  const [recordedBy, setRecordedBy] = useState<string>(currentDeviceName || 'مستر أحمد الشعراوي');
+  const [recordedBy, setRecordedBy] = useState<string>(defaultRecorder);
   const [note, setNote] = useState<string>('');
 
   // Refund state
@@ -73,12 +79,12 @@ export const PaymentModal: React.FC<Props> = ({
     const rem = Math.max(0, req - paid);
     setPayingNow(rem > 0 ? rem : req);
     setRefundAmount(paid);
-    setRecordedBy(currentDeviceName || 'مستر أحمد الشعراوي');
+    setRecordedBy(defaultRecorder);
     setNote('');
     setRefundReason('اعتذار عن الشهر واسترداد المبلغ');
     setError(null);
     setMode('pay');
-  }, [isOpen, student, existingRecord, currentDeviceName]);
+  }, [isOpen, student, existingRecord, defaultRecorder]);
 
   if (!isOpen || !student) return null;
 
